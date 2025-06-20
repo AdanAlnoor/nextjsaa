@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/utils/supabase/client'
+import { useCostControl } from '@/context/CostControlContext'
 
 interface BudgetItem {
   id: string
@@ -16,74 +17,30 @@ interface BudgetItem {
   level: number
   isCompleted?: boolean
   hasChildren?: boolean
-  isTitle?: boolean
   isExpanded?: boolean
   children?: BudgetItem[]
   parent_id?: string
-  structure_id?: string
-  type: 'structure' | 'element'
-}
-
-interface SummaryTotals {
-  original: number
-  actual: number
-  difference: number
-  paidBills: number
-  externalBills: number
-  pendingBills: number
+  type?: 'structure' | 'element'
 }
 
 interface SummaryDetailDataResult {
   items: BudgetItem[]
-  totals: SummaryTotals
+  flattenedItems: BudgetItem[]
+  summaryData: any
+  expandedItems: Set<string>
+  onToggleExpand: (id: string) => void
   isLoading: boolean
   isError: boolean
-  expandedItems: Set<string>
-  toggleItemExpanded: (id: string) => void
-  refreshData: (options?: { force?: boolean }) => Promise<void>
-}
-
-// Database data structures
-interface Structure {
-  id: string
-  name: string
-  amount: number
-  order_index?: number
-  project_id: string
-  created_at?: string
-  updated_at?: string
-}
-
-interface Element {
-  id: string
-  name: string
-  amount: number
-  order_index?: number
-  structure_id: string | null
-  project_id: string
-  created_at?: string
-  updated_at?: string
-}
-
-interface ProjectSummary {
-  id: string
-  project_id: string
-  structure_count: number
-  element_count: number
-  estimate_total: number
-  paid_bills_total: number
-  unpaid_bills_total: number
-  bills_difference: number
-  purchase_orders_total: number
-  wages_total: number
-  last_updated_at: string
-  created_at: string
+  refetch: () => void
 }
 
 export function useSummaryDetailData(projectId: string): SummaryDetailDataResult {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const queryClient = useQueryClient()
   const [items, setItems] = useState<BudgetItem[]>([])
+  
+  // Use existing cost control data instead of creating duplicates
+  const { costControlItems, loading: isCostControlLoading, refreshData: refreshCostControl } = useCostControl()
   
   // Fetch project summary data
   const { data: summaryData, isLoading: isSummaryLoading, error: summaryError, refetch: refetchSummary } = useQuery({
@@ -100,12 +57,12 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
           .single()
         
         if (error) {
-          throw new Error(`Error fetching summary: ${error.message}`)
+          throw new Error(`Error fetching project summary: ${error.message}`)
         }
         
-        return summary as ProjectSummary
+        return summary
       } catch (error) {
-        console.error('Failed to fetch project summary:', error)
+        console.error('Error in queryFn:', error)
         throw error
       }
     },
@@ -113,189 +70,67 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
     retry: 1
   })
   
-  // Fetch structures and elements separately to prevent duplication issues
-  const { data: structuresAndElements, isLoading: isStructureLoading, error: structureError, refetch: refetchStructures } = useQuery({
-    queryKey: ['summary-structures-and-elements', projectId],
-    queryFn: async () => {
-      console.log('Fetching structures and elements for', projectId)
-      
-      const supabase = createClient()
-      
-      try {
-        // First, fetch all structures for this project
-        const { data: structures, error: structuresError } = await supabase
-          .from('estimate_structures')
-          .select('id, name, amount, project_id')
-          .eq('project_id', projectId)
-          .order('name')
-        
-        if (structuresError) {
-          throw new Error(`Error fetching structures: ${structuresError.message}`)
-        }
-        
-        // Next, fetch ALL elements for this project
-        const { data: allElements, error: elementsError } = await supabase
-          .from('estimate_elements')
-          .select('id, name, amount, structure_id, project_id')
-          .eq('project_id', projectId)
-          .order('name')
-        
-        if (elementsError) {
-          throw new Error(`Error fetching elements: ${elementsError.message}`)
-        }
-        
-        // Group elements by structure_id for easier processing
-        const elementsByStructure: Record<string, Element[]> = {}
-        const orphanedElements: Element[] = []
-        
-        allElements.forEach((element: Element) => {
-          if (element.structure_id) {
-            if (!elementsByStructure[element.structure_id]) {
-              elementsByStructure[element.structure_id] = []
-            }
-            elementsByStructure[element.structure_id].push(element as Element)
-          } else {
-            orphanedElements.push(element as Element)
-          }
-        })
-        
-        return {
-          structures: structures as Structure[],
-          elementsByStructure,
-          orphanedElements,
-          allElements: allElements as Element[]
-        }
-      } catch (error) {
-        console.error('Failed to fetch structures and elements:', error)
-        throw error
-      }
-    },
-    enabled: !!projectId,
-    retry: 1
-  })
-  
-  // Transform data to budget items with proper hierarchy
+  // Transform cost control data to budget items with proper hierarchy
   const transformItemsData = useCallback(() => {
-    if (!structuresAndElements) return
+    if (!costControlItems || costControlItems.length === 0) return
     
-    console.log('Transforming structures and elements data:', structuresAndElements)
+    console.log('Transforming cost control data to budget items:', costControlItems.length, 'items')
     
-    const { structures, elementsByStructure, orphanedElements } = structuresAndElements
     const budgetItems: BudgetItem[] = []
     
-    // Deduplicate structures by name to ensure no duplicates are displayed
-    const structuresByName: Record<string, Structure> = {}
-    structures.forEach(structure => {
-      // If we haven't seen this structure name yet, or this one has more elements, use it
-      const existingStructure = structuresByName[structure.name]
-      const elementsCount = (elementsByStructure[structure.id] || []).length
-      
-      if (!existingStructure || elementsCount > (elementsByStructure[existingStructure.id] || []).length) {
-        structuresByName[structure.name] = structure
-      }
-    })
+    // Get parent items (structures) from cost control data
+    const parentItems = costControlItems.filter(item => item.isParent)
     
-    // Create budget items for structures and their elements using deduplicated structures
-    Object.values(structuresByName).forEach(structure => {
-      // Create structure item
+    // Process each parent structure
+    parentItems.forEach(parent => {
+      // Create structure budget item
       const structureItem: BudgetItem = {
-        id: structure.id,
-        name: structure.name,
-        original: Number(structure.amount) || 0,
-        actual: 0,
-        difference: Number(structure.amount) || 0,
-        paidBills: 0,
-        externalBills: 0,
-        pendingBills: 0,
+        id: parent.id,
+        name: parent.name,
+        original: parent.boAmount,
+        actual: parent.actual,
+        difference: parent.difference,
+        paidBills: parent.paidBills,
+        externalBills: parent.externalBills,
+        pendingBills: parent.pendingBills,
         level: 0,
         isCompleted: false,
-        hasChildren: !!(elementsByStructure[structure.id]?.length),
+        hasChildren: !!(parent.children && parent.children.length > 0),
         children: [],
         type: 'structure'
       }
       
-      // Create child items for elements with deduplication
-      const elementsForStructure = elementsByStructure[structure.id] || []
-      if (elementsForStructure.length > 0) {
-        console.log(`Processing ${elementsForStructure.length} elements for structure ${structure.name}`)
+      // Add children elements if they exist
+      if (parent.children && parent.children.length > 0) {
+        const childItems = parent.children.map(childId => {
+          const child = costControlItems.find(item => item.id === childId)
+          if (!child) return null
+          
+          return {
+            id: child.id,
+            name: child.name,
+            original: child.boAmount,
+            actual: child.actual,
+            difference: child.difference,
+            paidBills: child.paidBills,
+            externalBills: child.externalBills,
+            pendingBills: child.pendingBills,
+            level: 1,
+            isCompleted: false,
+            hasChildren: false,
+            children: [],
+            parent_id: parent.id,
+            type: 'element'
+          }
+        }).filter(Boolean) as BudgetItem[]
         
-        // Deduplicate elements by name
-        const elementsByName: Record<string, Element> = {}
-        elementsForStructure.forEach(element => {
-          elementsByName[element.name] = element
-        })
-        
-        structureItem.children = Object.values(elementsByName).map(element => ({
-          id: element.id,
-          name: element.name,
-          original: Number(element.amount) || 0,
-          actual: 0,
-          difference: Number(element.amount) || 0,
-          paidBills: 0,
-          externalBills: 0,
-          pendingBills: 0,
-          level: 1,
-          isCompleted: false,
-          hasChildren: false,
-          structure_id: structure.id,
-          parent_id: structure.id,
-          children: [],
-          type: 'element'
-        }))
-        
-        console.log(`Structure ${structure.name} has ${structureItem.children.length} unique elements`)
+        structureItem.children = childItems
       }
       
       budgetItems.push(structureItem)
     })
     
-    // Create a "virtual" structure for orphaned elements if any exist
-    if (orphanedElements && orphanedElements.length > 0) {
-      console.log(`Creating virtual structure for ${orphanedElements.length} orphaned elements`)
-      
-      // Deduplicate orphaned elements by name
-      const orphanedElementsByName: Record<string, Element> = {}
-      orphanedElements.forEach(element => {
-        orphanedElementsByName[element.name] = element
-      })
-      
-      const dedupedOrphanedElements = Object.values(orphanedElementsByName)
-      
-      const orphanedStructure: BudgetItem = {
-        id: 'orphaned-structure',
-        name: 'Unassigned Elements',
-        original: dedupedOrphanedElements.reduce((sum: number, element: Element) => sum + (Number(element.amount) || 0), 0),
-        actual: 0,
-        difference: dedupedOrphanedElements.reduce((sum: number, element: Element) => sum + (Number(element.amount) || 0), 0),
-        paidBills: 0,
-        externalBills: 0,
-        pendingBills: 0,
-        level: 0,
-        isCompleted: false,
-        hasChildren: dedupedOrphanedElements.length > 0,
-        children: dedupedOrphanedElements.map(element => ({
-          id: element.id,
-          name: element.name,
-          original: Number(element.amount) || 0,
-          actual: 0,
-          difference: Number(element.amount) || 0,
-          paidBills: 0,
-          externalBills: 0,
-          pendingBills: 0,
-          level: 1,
-          isCompleted: false,
-          hasChildren: false,
-          parent_id: 'orphaned-structure',
-          children: [],
-          type: 'element'
-        })),
-        type: 'structure'
-      }
-      
-      budgetItems.push(orphanedStructure)
-    }
-    
-    console.log('Final budget items after deduplication:', budgetItems)
+    console.log('Final budget items after transformation:', budgetItems.length)
     
     // Start with all items collapsed - users can expand as needed
     const expandedIds = new Set<string>()
@@ -304,65 +139,29 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
     setItems(budgetItems)
     setExpandedItems(expandedIds)
     
-  }, [structuresAndElements])
-  
+  }, [costControlItems])
+
+  // Call transform when cost control data changes
   useEffect(() => {
     transformItemsData()
   }, [transformItemsData])
-  
-  // Calculate totals from project summary
-  const totals = useMemo((): SummaryTotals => {
-    if (!summaryData) {
-      return {
-        original: 0,
-        actual: 0,
-        difference: 0,
-        paidBills: 0,
-        externalBills: 0,
-        pendingBills: 0
-      }
-    }
-    
-    return {
-      original: Number(summaryData.estimate_total) || 0,
-      actual: (Number(summaryData.paid_bills_total) || 0) + (Number(summaryData.unpaid_bills_total) || 0),
-      difference: Number(summaryData.bills_difference) || 0,
-      paidBills: Number(summaryData.paid_bills_total) || 0,
-      externalBills: 0, // Not tracked in summary table yet
-      pendingBills: Number(summaryData.unpaid_bills_total) || 0
-    }
-  }, [summaryData])
-  
-  // Toggle expanded state of an item
-  const toggleItemExpanded = (id: string) => {
-    setExpandedItems(prevExpanded => {
-      const newExpanded = new Set(prevExpanded)
-      if (newExpanded.has(id)) {
-        newExpanded.delete(id)
-        console.log(`Collapsing item with ID: ${id}`)
+
+  // Toggle expand/collapse for items
+  const handleToggleExpand = useCallback((id: string) => {
+    console.log('Expanding item with ID:', id)
+    setExpandedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
       } else {
-        newExpanded.add(id)
-        console.log(`Expanding item with ID: ${id}`)
+        next.add(id)
       }
-      return newExpanded
+      return next
     })
-  }
-  
-  // Refresh data with optional force parameter
-  const refreshData = async ({ force = false } = {}) => {
-    if (force) {
-      // Invalidate the queries first
-      await queryClient.invalidateQueries({ queryKey: ['project-summary', projectId] })
-      await queryClient.invalidateQueries({ queryKey: ['summary-structures-and-elements', projectId] })
-    }
-    await refetchSummary()
-    await refetchStructures()
-  }
-  
-  // Flattened items for display
-  const flattenedItems = useMemo((): BudgetItem[] => {
-    if (!items.length) return []
-    
+  }, [])
+
+  // Create flattened items for display (only shows items that should be visible)
+  const flattenedItems = useMemo(() => {
     const result: BudgetItem[] = []
     
     // Helper function to recursively add items and their children if expanded
@@ -390,16 +189,22 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
     return result
   }, [items, expandedItems])
   
-  const isLoading = isSummaryLoading || isStructureLoading
-  const isError = !!summaryError || !!structureError
-  
+  const isLoading = isSummaryLoading || isCostControlLoading
+  const isError = !!summaryError
+
+  const refetch = useCallback(() => {
+    refetchSummary()
+    refreshCostControl()
+  }, [refetchSummary, refreshCostControl])
+
   return {
-    items: flattenedItems,
-    totals,
+    items,
+    flattenedItems,
+    summaryData,
+    expandedItems,
+    onToggleExpand: handleToggleExpand,
     isLoading,
     isError,
-    expandedItems,
-    toggleItemExpanded,
-    refreshData
+    refetch
   }
-} 
+}
