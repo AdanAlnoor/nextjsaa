@@ -297,13 +297,8 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
     
     console.log('Final budget items after deduplication:', budgetItems)
     
-    // Auto-expand all structure items
+    // Start with all items collapsed - users can expand as needed
     const expandedIds = new Set<string>()
-    budgetItems.forEach(item => {
-      if (item.hasChildren) {
-        expandedIds.add(item.id)
-      }
-    })
     
     // Set the items and expanded state
     setItems(budgetItems)
