@@ -63,30 +63,15 @@ export function CostControlProvider({
         setRefreshing(true);
       }
       
-      console.log(`CostControlContext: ${isForceRefresh ? 'Force refreshing' : 'Refreshing'} data for project`, projectId);
       
       const data = await fetchCostControlData(projectId);
-      console.log(`CostControlContext: Fetched ${data.length} items from database`);
-      
-      if (data.length > 0) {
-        console.log("CostControlContext: Sample item from fetched data:", data[0]);
-        
-        // Check for any items with zero paid bills that shouldn't be zero
-        const zeroItems = data.filter(item => 
-          !item.isParent && 
-          (item.paidBills === 0 || item.paidBills === undefined)
-        );
-        console.log(`CostControlContext: Found ${zeroItems.length} items with zero paid bills`);
-      }
       
       // Set the data without using sample data as fallback
       setCostControlItems(data);
-      console.log("CostControlContext: Updated state with fetched data");
       setLastRefresh(new Date());
       
       setError(null);
     } catch (err) {
-      console.error('CostControlContext: Failed to load cost control data:', err);
       if (!options?.silent) {
         setError('Failed to load cost control data');
       }
@@ -101,21 +86,17 @@ export function CostControlProvider({
 
   // Listen for bill payment events
   useEffect(() => {
-    console.log("CostControlContext: Setting up event listeners for project", projectId);
     
     // When a bill payment is recorded, refresh the cost control data
     const unsubscribeBillPayment = eventBus.on(EVENT_TYPES.BILL_PAYMENT_RECORDED, (data) => {
-      console.log("CostControlContext: Bill payment recorded event received", data);
       // Wait a short delay to allow database operations to complete
       setTimeout(() => {
-        console.log("CostControlContext: Refreshing after bill payment");
         refreshData();
       }, 1000);
     });
     
     // When a general refresh is needed
     const unsubscribeRefreshNeeded = eventBus.on(EVENT_TYPES.COST_CONTROL_REFRESH_NEEDED, () => {
-      console.log("CostControlContext: Refresh needed event received");
       refreshData();
     });
     
@@ -136,6 +117,7 @@ export function CostControlProvider({
     const result: CostControlData[] = []
     const addedIds = new Set<string>()
     
+    
     // First, add all parent items
     costControlItems.forEach(item => {
       if (item.isParent && !addedIds.has(item.id)) {
@@ -155,30 +137,7 @@ export function CostControlProvider({
       }
     })
     
-    // Log the visible items for debugging
-    console.log('Visible items in CostControlContext:', result.length, result.map(i => i.name));
     
-    // Check for any items with undefined or NaN values
-    result.forEach(item => {
-      if (item.boAmount === undefined || isNaN(item.boAmount)) {
-        console.warn('Item with invalid boAmount:', item);
-      }
-      if (item.actual === undefined || isNaN(item.actual)) {
-        console.warn('Item with invalid actual:', item);
-      }
-      if (item.paidBills === undefined || isNaN(item.paidBills)) {
-        console.warn('Item with invalid paidBills:', item);
-      }
-      if (item.externalBills === undefined || isNaN(item.externalBills)) {
-        console.warn('Item with invalid externalBills:', item);
-      }
-      if (item.pendingBills === undefined || isNaN(item.pendingBills)) {
-        console.warn('Item with invalid pendingBills:', item);
-      }
-      if (item.wages === undefined || isNaN(item.wages)) {
-        console.warn('Item with invalid wages:', item);
-      }
-    });
     
     return result
   }, [costControlItems])
@@ -214,29 +173,17 @@ export function CostControlProvider({
   const importFromEstimate = async (recalculateParents: boolean = false) => {
     try {
       setImporting(true);
-      console.log('CostControlContext: Starting import for project ID:', projectId);
-      console.log('CostControlContext: Recalculate parents option:', recalculateParents);
       
       const result = await importEstimateDataToCostControl(projectId, recalculateParents);
-      console.log('CostControlContext: Import result:', result);
       
       if (!result.success) {
         let errorMessage = 'Import failed';
         
         // Detailed error handling based on the error type
         if (result.error) {
-          console.error('CostControlContext: Import error details:', result.error);
-          
           if (typeof result.error === 'object') {
-            if (result.error.code) {
-              console.error('CostControlContext: Error code:', result.error.code);
-            }
             if (result.error.message) {
               errorMessage = result.error.message;
-              console.error('CostControlContext: Error message:', result.error.message);
-            }
-            if (result.error.details) {
-              console.error('CostControlContext: Error details:', result.error.details);
             }
           } else if (typeof result.error === 'string') {
             errorMessage = result.error;
@@ -251,23 +198,9 @@ export function CostControlProvider({
       await refreshData();
       return { success: true };
     } catch (err: any) {
-      console.error('CostControlContext: Exception during import:', err);
-      
       let errorMessage = 'Unknown error occurred during import';
-      if (err) {
-        if (err.message) {
-          errorMessage = err.message;
-          console.error('CostControlContext: Error message:', err.message);
-        }
-        if (err.code) {
-          console.error('CostControlContext: Error code:', err.code);
-        }
-        if (err.details) {
-          console.error('CostControlContext: Error details:', err.details);
-        }
-        if (err.hint) {
-          console.error('CostControlContext: Error hint:', err.hint);
-        }
+      if (err?.message) {
+        errorMessage = err.message;
       }
       
       setError(errorMessage);

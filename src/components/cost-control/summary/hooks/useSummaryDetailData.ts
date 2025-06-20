@@ -46,7 +46,6 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
   const { data: summaryData, isLoading: isSummaryLoading, error: summaryError, refetch: refetchSummary } = useQuery({
     queryKey: ['project-summary', projectId],
     queryFn: async () => {
-      console.log('Fetching project summary for', projectId)
       const supabase = createClient()
       
       try {
@@ -62,7 +61,6 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
         
         return summary
       } catch (error) {
-        console.error('Error in queryFn:', error)
         throw error
       }
     },
@@ -74,7 +72,6 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
   const transformItemsData = useCallback(() => {
     if (!costControlItems || costControlItems.length === 0) return
     
-    console.log('Transforming cost control data to budget items:', costControlItems.length, 'items')
     
     const budgetItems: BudgetItem[] = []
     
@@ -130,7 +127,6 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
       budgetItems.push(structureItem)
     })
     
-    console.log('Final budget items after transformation:', budgetItems.length)
     
     // Start with all items collapsed - users can expand as needed
     const expandedIds = new Set<string>()
@@ -148,7 +144,6 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
 
   // Toggle expand/collapse for items
   const handleToggleExpand = useCallback((id: string) => {
-    console.log('Expanding item with ID:', id)
     setExpandedItems(prev => {
       const next = new Set(prev)
       if (next.has(id)) {
@@ -185,7 +180,6 @@ export function useSummaryDetailData(projectId: string): SummaryDetailDataResult
       addItemAndChildren(item)
     })
     
-    console.log(`Flattened ${result.length} items for display`)
     return result
   }, [items, expandedItems])
   

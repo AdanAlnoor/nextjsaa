@@ -11,29 +11,16 @@ type CostControlRow = Database['public']['Tables']['cost_control_items']['Row']
  * Transform database rows into a hierarchical structure for the UI
  */
 export function transformCostControlData(rows: CostControlRow[]): CostControlData[] {
-  console.log("Transforming cost control data from DB rows:", rows);
-  
   if (!rows || rows.length === 0) {
-    console.log("No rows to transform");
     return [];
-  }
-  
-  // Log the structure of the first row to help debug
-  if (rows.length > 0) {
-    console.log("First row structure:", Object.keys(rows[0]));
-    console.log("First row values:", rows[0]);
   }
   
   try {
     // First, convert database rows to UI data structure
     const items: CostControlData[] = rows.map(row => {
       try {
-        // Log each row and the mapped result for debugging
-        const mappedItem = mapDbToCostControlData(row as any);
-        console.log("Mapped item from DB row:", row.id, mappedItem);
-        return mappedItem;
+        return mapDbToCostControlData(row as any);
       } catch (error) {
-        console.error("Error mapping row to CostControlData:", error, row);
         // Return a default item with minimal data to prevent UI crashes
         return {
           id: row.id || 'unknown',
@@ -86,10 +73,8 @@ export function transformCostControlData(rows: CostControlRow[]): CostControlDat
       }
     });
 
-    console.log("Transformed cost control data:", items);
     return items;
   } catch (error) {
-    console.error("Error in transformCostControlData:", error);
     return [];
   }
 }
@@ -99,7 +84,6 @@ export function transformCostControlData(rows: CostControlRow[]): CostControlDat
  */
 export async function fetchCostControlData(projectId: string): Promise<CostControlData[]> {
   try {
-    console.log("Fetching cost control data for project:", projectId);
     
     // First, check if the table exists by querying a single row
     const { data: tableCheck, error: tableError } = await supabase
@@ -108,11 +92,8 @@ export async function fetchCostControlData(projectId: string): Promise<CostContr
       .limit(1);
       
     if (tableError) {
-      console.error('Error checking cost_control_items table:', tableError);
       return [];
     }
-    
-    console.log("Table check result:", tableCheck);
     
     // Now fetch the actual data, filtering out orphaned items
     const { data, error } = await supabase
@@ -123,57 +104,52 @@ export async function fetchCostControlData(projectId: string): Promise<CostContr
       .order('order_index', { ascending: true });
 
     if (error) {
-      console.error('Error fetching cost control data:', error);
       return [];
     }
     
-    console.log(`Fetched ${data?.length || 0} cost control items for project ${projectId}`);
-    
-    // Filter out orphaned items by checking if their estimate references still exist
-    const validItems = []
+    // Optimize orphaned item filtering by batch checking instead of individual queries
+    let validItems = data || []
     
     if (data && data.length > 0) {
-      for (const item of data) {
-        let isValid = false
-        
-        if (item.level === 0) {
-          // Check if the structure still exists
-          const { data: structureExists } = await supabase
-            .from('estimate_structures')
-            .select('id')
-            .eq('id', item.estimate_item_id)
-            .single()
-          isValid = !!structureExists
-        } else if (item.level === 1) {
-          // Check if the element still exists
-          const { data: elementExists } = await supabase
-            .from('estimate_elements')
-            .select('id')
-            .eq('id', item.estimate_item_id)
-            .single()
-          isValid = !!elementExists
-        } else {
-          // Keep other levels for now
-          isValid = true
-        }
-        
-        if (isValid) {
-          validItems.push(item)
-        } else {
-          console.log(`Filtering out orphaned item: ${item.name} (${item.level})`)
-        }
+      // Get all structure and element IDs that need validation
+      const structureIds = data.filter(item => item.level === 0).map(item => item.estimate_item_id).filter(Boolean)
+      const elementIds = data.filter(item => item.level === 1).map(item => item.estimate_item_id).filter(Boolean)
+      
+      // Batch check structures
+      let validStructureIds = new Set<string>()
+      if (structureIds.length > 0) {
+        const { data: validStructures } = await supabase
+          .from('estimate_structures')
+          .select('id')
+          .in('id', structureIds)
+        validStructureIds = new Set(validStructures?.map(s => s.id) || [])
       }
+      
+      // Batch check elements  
+      let validElementIds = new Set<string>()
+      if (elementIds.length > 0) {
+        const { data: validElements } = await supabase
+          .from('estimate_elements')
+          .select('id')
+          .in('id', elementIds)
+        validElementIds = new Set(validElements?.map(e => e.id) || [])
+      }
+      
+      // Filter items based on batch results
+      validItems = data.filter(item => {
+        if (item.level === 0) {
+          return validStructureIds.has(item.estimate_item_id)
+        } else if (item.level === 1) {
+          return validElementIds.has(item.estimate_item_id)
+        } else {
+          return true // Keep other levels
+        }
+      })
     }
     
-    console.log(`After filtering orphaned items: ${validItems.length} valid items`);
-    
-    if (validItems && validItems.length > 0) {
-      console.log("Sample valid data item:", validItems[0]);
-    }
 
     return transformCostControlData(validItems);
   } catch (error) {
-    console.error('Unexpected error in fetchCostControlData:', error);
     return [];
   }
 }
@@ -196,13 +172,11 @@ export async function createCostControlItem(
       .single()
 
     if (error) {
-      console.error('Error creating cost control item:', error)
       return null
     }
 
     return data
   } catch (error) {
-    console.error('Error:', error)
     return null
   }
 }
@@ -223,13 +197,11 @@ export async function updateCostControlItem(
       .single()
 
     if (error) {
-      console.error('Error updating cost control item:', error)
       return null
     }
 
     return data
   } catch (error) {
-    console.error('Error:', error)
     return null
   }
 }
@@ -245,13 +217,11 @@ export async function deleteCostControlItem(id: string) {
       .eq('id', id)
 
     if (error) {
-      console.error('Error deleting cost control item:', error)
       return false
     }
 
     return true
   } catch (error) {
-    console.error('Error:', error)
     return false
   }
 } 

@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog"
 import { Database } from '@/types/supabase'
 import { Plus, Search, ChevronDown, Upload, FileSpreadsheet, Eye, Lock, Unlock, Download, FileText, ChevronRight, Loader2, Database as DatabaseIcon, TrendingUp, DollarSign, PencilIcon, TrashIcon } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Separator } from "@/components/ui/separator"
 import { Info } from 'lucide-react'
 import { jsPDF } from 'jspdf'
@@ -107,7 +107,6 @@ export function EstimateTab({ project }: { project: Project }) {
   const { data: estimateData, isLoading } = useQuery({
     queryKey: ['estimate', project.id],
     queryFn: async () => {
-      console.log('Fetching estimate data for project:', project.id);
       const { data, error } = await supabase
         .from('estimate_items_view')
         .select('*')
@@ -117,24 +116,6 @@ export function EstimateTab({ project }: { project: Project }) {
       if (error) {
         console.error('Error fetching estimate data:', error);
         throw error;
-      }
-      
-      console.log('Fetched estimate items:', data ? data.length : 0, 'items');
-      if (data && data.length > 0) {
-        // Log a summary of items by level
-        const levelCounts = data.reduce((acc: {[key: number]: number}, item) => {
-          acc[item.level] = (acc[item.level] || 0) + 1;
-          return acc;
-        }, {});
-        console.log('Items by level:', levelCounts);
-        
-        // Log any Level 0 items to verify they exist
-        const level0Items = data.filter(item => item.level === 0);
-        if (level0Items.length > 0) {
-          console.log('Level 0 items found:', level0Items);
-        } else {
-          console.log('No Level 0 items found in the database');
-        }
       }
       
       return data || [];
@@ -151,35 +132,20 @@ export function EstimateTab({ project }: { project: Project }) {
   const addItemMutation = useMutation({
     mutationFn: async (item: Database['public']['Tables']['estimate_items']['Insert']) => {
       try {
-        console.log('Mutation attempting to insert item:', JSON.stringify(item, null, 2));
         
-        // Create a modified item with the correct field name for the database
-        const dbItem = {
-          ...item,
-          // Use rate if it already exists (from the form), otherwise map from unit_cost
-          rate: (item as any).rate || item.unit_cost,
-        };
-        
-        // Remove the field that doesn't exist in database to avoid the PGRST204 error
-        delete (dbItem as any).unit_cost;
-        
-        console.log('Inserting into database with modified item:', JSON.stringify(dbItem, null, 2));
-        
-        // Use EstimateService instead of direct database access
-        return await EstimateService.createEstimateItem(dbItem);
+        // Use EstimateService which handles the proper table routing and field mapping
+        return await EstimateService.createEstimateItem(item);
       } catch (error) {
         console.error('Error in createItemMutation:', error);
         throw error;
       }
     },
     onSuccess: (data) => {
-      console.log('Mutation success, data returned:', data);
       queryClient.invalidateQueries({ queryKey: ['estimate', project.id] });
       toast.success('Item added successfully');
     },
     onError: (error: Error) => {
       toast.error('Failed to add item');
-      console.error('Mutation error handler:', error);
     }
   })
 
@@ -192,7 +158,6 @@ export function EstimateTab({ project }: { project: Project }) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update item')
-      console.error(error)
     }
   })
 
@@ -204,7 +169,6 @@ export function EstimateTab({ project }: { project: Project }) {
     },
     onError: (error: Error) => {
       toast.error('Failed to delete item')
-      console.error(error)
     }
   })
 
@@ -570,9 +534,8 @@ export function EstimateTab({ project }: { project: Project }) {
     doc.save(`${project.name}_Estimate_${timestamp}.pdf`);
   };
 
-  // Transform database items into tree structure
-  const transformToTree = (items: DatabaseEstimateItem[]): Level0Item[] => {
-    console.log('Starting tree transformation with', items.length, 'items');
+  // Transform database items into tree structure - memoized for performance  
+  const transformToTree = useCallback((items: DatabaseEstimateItem[]): Level0Item[] => {
     
     const itemMap = new Map<string, any>();
     const roots: Level0Item[] = [];
@@ -615,10 +578,6 @@ export function EstimateTab({ project }: { project: Project }) {
           node.amount = item.quantity * rate;
         }
         
-        // Log the Level 2 item for debugging
-        console.log('Created Level 2 node:', 
-          { id: node.id, name: node.name, quantity: node.quantity, unit: node.unit, 
-            unit_cost: node.unit_cost, amount: node.amount });
       } else if (item.level === 1) {
         node = {
           ...baseNode,
@@ -629,7 +588,6 @@ export function EstimateTab({ project }: { project: Project }) {
           ...baseNode,
           children: [] as Level1Item[]
         } as Level0Item;
-        console.log('Created Level 0 node:', node);
       }
 
       itemMap.set(item.id, node);
@@ -646,17 +604,12 @@ export function EstimateTab({ project }: { project: Project }) {
           const childIndex = parent.children.length;
           node.index = `${parent.index}.${childIndex}`;
         } else {
-          console.warn(`Parent with ID ${item.parent_id} not found for item ${item.id}`);
         }
       } else {
         roots.push(node as Level0Item);
-        if (item.level === 0) {
-          console.log('Added Level 0 item to roots:', node);
-        }
       }
     });
 
-    console.log('Tree transformation complete. Root items:', roots.length);
     
     // Third pass: Calculate parent costs from children
     const calculateParentCost = (node: EstimateItem): number => {
@@ -676,21 +629,17 @@ export function EstimateTab({ project }: { project: Project }) {
     roots.forEach(root => calculateParentCost(root));
 
     return roots;
-  };
+  }, []);
 
-  // Filter items based on search and status
-  const filterItems = (items: Level0Item[]): Level0Item[] => {
-    console.log('Filtering tree data with', items.length, 'root items');
-    console.log('Current filters - Search:', searchQuery, 'Status:', selectedStatus);
+  // Filter items based on search and status - memoized for performance
+  const filterItems = useCallback((items: Level0Item[]): Level0Item[] => {
+    const searchLower = searchQuery.toLowerCase();
     
     return items.filter(item => {
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesSearch = item.name.toLowerCase().includes(searchLower)
       const matchesStatus = selectedStatus === 'all' || item.status.toLowerCase() === selectedStatus
       
       if (!matchesSearch && !matchesStatus) {
-        if (item.level === 0) {
-          console.log('Filtering out Level 0 item due to no match:', item.name);
-        }
         return false;
       }
       
@@ -700,16 +649,12 @@ export function EstimateTab({ project }: { project: Project }) {
         const keepDueToChildren = filteredChildren.length > 0;
         const keepDueToSelf = matchesSearch;
         
-        if (item.level === 0 && !keepDueToSelf && !keepDueToChildren) {
-          console.log('Filtering out Level 0 item after children check:', item.name);
-        }
-        
         return filteredChildren.length > 0 || matchesSearch
       }
       
       return true
     })
-  }
+  }, [searchQuery, selectedStatus])
 
   // Calculate total values for footer
   const calculateTotalValues = (items: Level0Item[]): Totals => {
@@ -733,20 +678,21 @@ export function EstimateTab({ project }: { project: Project }) {
     return { projectTotal, totalProfit, totalOverheads };
   };
 
-  const treeData = estimateData ? transformToTree(estimateData) : [];
-  const filteredTreeData = filterItems(treeData);
-  const calculatedTotals = calculateTotalValues(filteredTreeData);
-  
-  // Monitor data flow for debugging
-  useEffect(() => {
-    if (estimateData) {
-      console.log('estimateData updated, count:', estimateData.length);
-    }
-  }, [estimateData]);
-  
-  useEffect(() => {
-    console.log('filteredTreeData updated, count:', filteredTreeData.length);
+  // Memoize tree transformation to prevent unnecessary recalculations
+  const treeData = useMemo(() => {
+    return estimateData ? transformToTree(estimateData) : [];
+  }, [estimateData, transformToTree]);
+
+  // Memoize filtering to prevent unnecessary recalculations
+  const filteredTreeData = useMemo(() => {
+    return filterItems(treeData);
+  }, [treeData, filterItems]);
+
+  // Memoize total calculations
+  const calculatedTotals = useMemo(() => {
+    return calculateTotalValues(filteredTreeData);
   }, [filteredTreeData]);
+  
 
   const formatCurrency = (value: number) => value.toLocaleString();
 
@@ -788,7 +734,6 @@ export function EstimateTab({ project }: { project: Project }) {
       queryClient.invalidateQueries({ queryKey: ['estimate', project.id] })
       toast.success('Sample estimate data added successfully')
     } catch (error) {
-      console.error('Error seeding data:', error)
       toast.error('Failed to add sample data')
     } finally {
       setIsSeeding(false)
@@ -806,16 +751,9 @@ export function EstimateTab({ project }: { project: Project }) {
   // Add the handleAddItem function
   const handleAddItem = async (item: Database['public']['Tables']['estimate_items']['Insert']) => {
     try {
-      console.log('Attempting to add item:', JSON.stringify(item, null, 2));
       await addItemMutation.mutateAsync(item);
-      console.log('Item added successfully');
       setIsAddDialogOpen(false);
     } catch (error) {
-      console.error('Failed to add item:', error);
-      if (error instanceof Error) {
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
-      }
       // Keep dialog open on error to allow retry
     }
   }
@@ -977,11 +915,7 @@ export function EstimateTab({ project }: { project: Project }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-indigo-200/50 dark:divide-indigo-800/30">
-                  {/* Logging render info */}
-                  {(() => { console.log('Preparing to render', filteredTreeData.length, 'root items'); return null; })()}
-                  {filteredTreeData.map((item, idx) => {
-                    console.log('Rendering row for item:', item.name, 'Level:', item.level, 'Index:', idx);
-                    return (
+                  {filteredTreeData.map((item, idx) => (
                       <EstimateRow 
                         key={item.id} 
                         item={item} 
@@ -1001,8 +935,7 @@ export function EstimateTab({ project }: { project: Project }) {
                         visibleColumns={visibleColumns}
                         isExpanded={isExpanded}
                       />
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
