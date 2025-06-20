@@ -134,25 +134,21 @@ export function CostControlProvider({
   // Build a map of parent items to their visible children
   const visibleItems = useMemo(() => {
     const result: CostControlData[] = []
-    const idToItem = new Map<string, CostControlData>()
+    const addedIds = new Set<string>()
     
-    // First, create a map of all items by ID
+    // First, add all parent items
     costControlItems.forEach(item => {
-      idToItem.set(item.id, item)
-    })
-    
-    // Then build the visible items list
-    costControlItems.forEach(item => {
-      // Always include parent items
-      if (item.isParent) {
+      if (item.isParent && !addedIds.has(item.id)) {
         result.push(item)
+        addedIds.add(item.id)
         
         // If this parent is open, include its children
         if (item.isOpen && item.children) {
           item.children.forEach(childId => {
-            const child = idToItem.get(childId)
-            if (child) {
+            const child = costControlItems.find(c => c.id === childId)
+            if (child && !addedIds.has(child.id)) {
               result.push(child)
+              addedIds.add(child.id)
             }
           })
         }
@@ -160,7 +156,7 @@ export function CostControlProvider({
     })
     
     // Log the visible items for debugging
-    console.log('Visible items in CostControlContext:', result);
+    console.log('Visible items in CostControlContext:', result.length, result.map(i => i.name));
     
     // Check for any items with undefined or NaN values
     result.forEach(item => {

@@ -609,7 +609,7 @@ export function mapDbToCostControlData(item: CostControlItem) {
     pendingBills: typeof item.pending_bills === 'number' ? item.pending_bills : 0,
     wages: typeof item.wages === 'number' ? item.wages : 0,
     isParent: !!item.is_parent,
-    isOpen: !!item.is_parent,
+    isOpen: false, // Start with all items closed
     level: typeof item.level === 'number' ? item.level : 0,
     parentId: item.parent_id || null,
     orderIndex: typeof item.order_index === 'number' ? item.order_index : 0,
