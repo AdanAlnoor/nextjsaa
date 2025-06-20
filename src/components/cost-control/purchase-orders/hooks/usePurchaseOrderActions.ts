@@ -1,0 +1,369 @@
+'use client'
+
+import { useState } from 'react'
+import { useToast } from '@/components/ui/use-toast'
+import { createClient } from '@/utils/supabase/client'
+import { Database } from '@/types/supabase'
+import { useRouter } from 'next/navigation'
+
+type PurchaseOrder = Database['public']['Tables']['purchase_orders']['Row']
+type PurchaseOrderItem = Database['public']['Tables']['purchase_order_items']['Row']
+
+interface CreatePOData {
+  po_number: string
+  name: string
+  supplier: string
+  description?: string
+  total: number
+  status: 'Draft' | 'Pending' | 'Approved' | 'Rejected'
+  items: {
+    description: string
+    quantity: number
+    unit: string
+    price: number
+    amount: number
+    internal_note?: string
+  }[]
+}
+
+export function usePurchaseOrderActions(projectId: string) {
+  const { toast } = useToast()
+  const supabase = createClient()
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(false)
+  
+  // Create a new purchase order
+  const createPurchaseOrder = async (data: CreatePOData) => {
+    try {
+      setIsLoading(true)
+      
+      // Insert the purchase order
+      const { data: poData, error: poError } = await supabase
+        .from('purchase_orders')
+        .insert({
+          project_id: projectId,
+          po_number: data.po_number,
+          name: data.name,
+          assigned_to: data.supplier,
+          description: data.description || null,
+          total: data.total,
+          status: data.status,
+        })
+        .select()
+      
+      if (poError) throw poError
+      if (!poData || poData.length === 0) throw new Error('No purchase order created')
+      
+      const poId = poData[0].id
+      
+      // Insert purchase order items
+      const itemsToInsert = data.items.map(item => ({
+        purchase_order_id: poId,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        price: item.price,
+        amount: item.amount,
+        internal_note: item.internal_note || null,
+      }))
+      
+      const { error: itemsError } = await supabase
+        .from('purchase_order_items')
+        .insert(itemsToInsert)
+      
+      if (itemsError) throw itemsError
+      
+      toast({
+        title: 'Success',
+        description: 'Purchase order created successfully',
+      })
+      
+      return { success: true, id: poId }
+    } catch (error) {
+      console.error('Error creating purchase order:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to create purchase order',
+        variant: 'destructive',
+      })
+      return { success: false, error }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
+  // Update an existing purchase order
+  const updatePurchaseOrder = async (poId: string, data: Partial<CreatePOData>) => {
+    try {
+      setIsLoading(true)
+      
+      // Update the purchase order
+      const updateData: any = {}
+      if (data.name) updateData.name = data.name
+      if (data.supplier) updateData.assigned_to = data.supplier
+      if (data.description !== undefined) updateData.description = data.description || null
+      if (data.total) updateData.total = data.total
+      if (data.status) updateData.status = data.status
+      
+      const { error: poError } = await supabase
+        .from('purchase_orders')
+        .update(updateData)
+        .eq('id', poId)
+      
+      if (poError) throw poError
+      
+      // If items are provided, handle them
+      if (data.items) {
+        // First get existing items
+        const { data: existingItems, error: fetchError } = await supabase
+          .from('purchase_order_items')
+          .select('id')
+          .eq('purchase_order_id', poId)
+        
+        if (fetchError) throw fetchError
+        
+        // Delete existing items
+        if (existingItems && existingItems.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('purchase_order_items')
+            .delete()
+            .eq('purchase_order_id', poId)
+          
+          if (deleteError) throw deleteError
+        }
+        
+        // Insert new items
+        const itemsToInsert = data.items.map(item => ({
+          purchase_order_id: poId,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          price: item.price,
+          amount: item.amount,
+          internal_note: item.internal_note || null,
+        }))
+        
+        const { error: itemsError } = await supabase
+          .from('purchase_order_items')
+          .insert(itemsToInsert)
+        
+        if (itemsError) throw itemsError
+      }
+      
+      toast({
+        title: 'Success',
+        description: 'Purchase order updated successfully',
+      })
+      
+      return { success: true }
+    } catch (error) {
+      console.error('Error updating purchase order:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to update purchase order',
+        variant: 'destructive',
+      })
+      return { success: false, error }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
+  // Delete a purchase order
+  const deletePurchaseOrder = async (poId: string) => {
+    try {
+      setIsLoading(true)
+      
+      // Delete all items first (cascade should handle this, but being explicit)
+      const { error: itemsError } = await supabase
+        .from('purchase_order_items')
+        .delete()
+        .eq('purchase_order_id', poId)
+      
+      if (itemsError) throw itemsError
+      
+      // Delete the purchase order
+      const { error: poError } = await supabase
+        .from('purchase_orders')
+        .delete()
+        .eq('id', poId)
+      
+      if (poError) throw poError
+      
+      toast({
+        title: 'Success',
+        description: 'Purchase order deleted successfully',
+      })
+      
+      return { success: true }
+    } catch (error) {
+      console.error('Error deleting purchase order:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to delete purchase order',
+        variant: 'destructive',
+      })
+      return { success: false, error }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
+  // Approve a purchase order
+  const approvePurchaseOrder = async (poId: string, notes?: string) => {
+    try {
+      setIsLoading(true)
+      
+      const now = new Date().toISOString()
+      
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .update({
+          status: 'Approved',
+          approval_date: now,
+          approval_notes: notes || null,
+          updated_at: now
+        })
+        .eq('id', poId)
+        .select()
+      
+      if (error) throw error
+      
+      toast({
+        title: 'Purchase Order Approved',
+        description: 'The purchase order has been successfully approved',
+      })
+      
+      return { success: true, data }
+    } catch (error) {
+      console.error('Error approving purchase order:', error)
+      toast({
+        title: 'Approval Failed',
+        description: 'There was an error approving the purchase order',
+        variant: 'destructive',
+      })
+      return { success: false, error }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
+  // Reject a purchase order
+  const rejectPurchaseOrder = async (poId: string, reason: string) => {
+    try {
+      setIsLoading(true)
+      
+      if (!reason.trim()) {
+        toast({
+          title: 'Rejection Reason Required',
+          description: 'Please provide a reason for rejecting this purchase order',
+          variant: 'destructive',
+        })
+        return { success: false, error: 'Rejection reason required' }
+      }
+      
+      const now = new Date().toISOString()
+      
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .update({
+          status: 'Rejected',
+          rejection_date: now,
+          rejection_reason: reason,
+          updated_at: now
+        })
+        .eq('id', poId)
+        .select()
+      
+      if (error) throw error
+      
+      toast({
+        title: 'Purchase Order Rejected',
+        description: 'The purchase order has been rejected',
+      })
+      
+      return { success: true, data }
+    } catch (error) {
+      console.error('Error rejecting purchase order:', error)
+      toast({
+        title: 'Rejection Failed',
+        description: 'There was an error rejecting the purchase order',
+        variant: 'destructive',
+      })
+      return { success: false, error }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
+  // Resubmit a rejected purchase order
+  const resubmitPurchaseOrder = async (poId: string) => {
+    try {
+      setIsLoading(true)
+      
+      const now = new Date().toISOString()
+      
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .update({
+          status: 'Pending',
+          updated_at: now
+        })
+        .eq('id', poId)
+        .select()
+      
+      if (error) throw error
+      
+      toast({
+        title: 'Purchase Order Resubmitted',
+        description: 'The purchase order has been resubmitted for approval',
+      })
+      
+      return { success: true, data }
+    } catch (error) {
+      console.error('Error resubmitting purchase order:', error)
+      toast({
+        title: 'Resubmission Failed',
+        description: 'There was an error resubmitting the purchase order',
+        variant: 'destructive',
+      })
+      return { success: false, error }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
+  // Convert a PO to a bill
+  const convertToBill = async (poId: string, billData: any) => {
+    try {
+      setIsLoading(true)
+      
+      // Navigate to the bills tab with the PO ID as a query parameter
+      // This triggers the bill creation flow in the bills tab
+      router.push(`/projects/${projectId}/cost-control/bills?po=${poId}`)
+      
+      return { success: true }
+    } catch (error) {
+      console.error('Error navigating to convert PO to bill:', error)
+      toast({
+        title: 'Navigation Error',
+        description: 'Failed to navigate to bill creation',
+        variant: 'destructive',
+      })
+      return { success: false, error }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
+  return {
+    createPurchaseOrder,
+    updatePurchaseOrder,
+    deletePurchaseOrder,
+    approvePurchaseOrder,
+    rejectPurchaseOrder,
+    resubmitPurchaseOrder,
+    convertToBill,
+    isLoading,
+  }
+} 

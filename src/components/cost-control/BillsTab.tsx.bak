@@ -1,0 +1,1736 @@
+'use client'
+
+import { Database } from '@/types/supabase'
+import { useCostControl } from '@/context/CostControlContext'
+import { Button } from '@/components/ui/button'
+import { Loader2, RefreshCw, Plus, FileText, FileSpreadsheet, Check, X, AlertCircle, ArrowLeft, MoreVertical, Filter, ArrowUpDown, ChevronDown, CalendarDays, Pencil, DollarSign, Trash2, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { formatCurrency } from '@/lib/utils'
+import { useEffect, useState, useCallback } from 'react'
+import { toast } from '@/components/ui/use-toast'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
+
+// Import new service and types
+import { 
+  getBills, 
+  getBillById, 
+  createBill,
+  updateBill, 
+  deleteBill, 
+  recordPayment, 
+  createBillFromPurchaseOrder, 
+  uploadBillAttachment,
+  generateBillNumber,
+  Bill,
+  BillWithRelations, 
+  BillItem, 
+  BillPayment, 
+  BillFilters, 
+  FetchBillsOptions 
+} from '@/services/billsService';
+import { Badge } from '@/components/ui/badge'
+import { RecordPaymentDialog } from '@/components/cost-control/RecordPaymentDialog';
+
+type Project = Database['public']['Tables']['projects']['Row']
+type PurchaseOrder = Database['public']['Tables']['purchase_orders']['Row']
+type PurchaseOrderItem = Database['public']['Tables']['purchase_order_items']['Row']
+type Supplier = Database['public']['Tables']['suppliers']['Row']
+
+interface BillsTabProps {
+  project: Project
+}
+
+// Extend the BillFilters interface to include date range filters
+interface ExtendedBillFilters extends BillFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  status?: string;
+}
+
+// --- Helper Function for Status Badge Color ---
+const getStatusColor = (status: string) => {
+  switch (status?.toLowerCase()) {
+    case 'paid': return 'bg-green-100 text-green-800';
+    case 'partial': return 'bg-blue-100 text-blue-800';
+    case 'pending': return 'bg-yellow-100 text-yellow-800';
+    case 'overdue': return 'bg-red-100 text-red-800';
+    case 'draft': return 'bg-gray-100 text-gray-800';
+    case 'void': return 'bg-purple-100 text-purple-800';
+    default: return 'bg-gray-100 text-gray-800';
+  }
+};
+
+// StatusBadge component for better visual representation of bill status
+const StatusBadge = ({ status }: { status: string }) => {
+  const getStatusConfig = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'paid':
+        return {
+          color: 'bg-green-100 border-green-200 text-green-800',
+          icon: <Check className="h-3 w-3 mr-1" />,
+          label: 'Paid'
+        };
+      case 'partial':
+        return {
+          color: 'bg-blue-100 border-blue-200 text-blue-800',
+          icon: <div className="h-3 w-3 mr-1 rounded-full border-2 border-blue-500 border-r-transparent" />,
+          label: 'Partial'
+        };
+      case 'pending':
+        return {
+          color: 'bg-yellow-100 border-yellow-200 text-yellow-800',
+          icon: <Clock className="h-3 w-3 mr-1" />,
+          label: 'Pending'
+        };
+      case 'overdue':
+        return {
+          color: 'bg-red-100 border-red-200 text-red-800',
+          icon: <AlertCircle className="h-3 w-3 mr-1" />,
+          label: 'Overdue'
+        };
+      case 'draft': 
+        return {
+          color: 'bg-gray-100 border-gray-200 text-gray-800',
+          icon: <FileText className="h-3 w-3 mr-1" />,
+          label: 'Draft'
+        };
+      case 'void':
+        return {
+          color: 'bg-purple-100 border-purple-200 text-purple-800',
+          icon: <X className="h-3 w-3 mr-1" />,
+          label: 'Void'
+        };
+      default:
+        return {
+          color: 'bg-gray-100 border-gray-200 text-gray-800',
+          icon: null,
+          label: status || 'Unknown'
+        };
+    }
+  };
+
+  const config = getStatusConfig(status);
+
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${config.color}`}>
+      {config.icon}
+      {config.label}
+    </span>
+  );
+};
+
+export function BillsTab({ project }: BillsTabProps) {
+  const { refreshData: contextRefreshData } = useCostControl() 
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const supabase = createClient()
+  
+  // Debug auth status
+  const [authStatus, setAuthStatus] = useState<string>("Checking...")
+  
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const { data } = await supabase.auth.getSession()
+        setAuthStatus(data.session ? `Authenticated as ${data.session.user.email}` : "Not authenticated")
+      } catch (err) {
+        setAuthStatus("Auth error")
+        console.error(err)
+      }
+    }
+    checkAuth()
+  }, [supabase])
+  
+  // --- State Management ---
+  const [bills, setBills] = useState<BillWithRelations[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedBill, setSelectedBill] = useState<BillWithRelations | null>(null)
+  const [currentBillIdForPayment, setCurrentBillIdForPayment] = useState<string | null>(null)
+  
+  // Dialog states
+  const [isCreateBillDialogOpen, setIsCreateBillDialogOpen] = useState(false) // For direct bill creation
+  const [isEditBillDialogOpen, setIsEditBillDialogOpen] = useState(false)
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false)
+  const [isHandlingPaymentClick, setIsHandlingPaymentClick] = useState(false) // Add this flag to prevent multiple invocations
+  const [isTestDialogOpen, setIsTestDialogOpen] = useState(false) // Test dialog state
+  
+  // PO Conversion states
+  const [isConvertingPO, setIsConvertingPO] = useState(false)
+  const [poToConvert, setPoToConvert] = useState<PurchaseOrder | null>(null)
+  const [convertPoBillDetails, setConvertPoBillDetails] = useState({ billNumber: '', issueDate: new Date().toISOString().split('T')[0], dueDate: ''});
+
+  // Filter and Sort states (Basic placeholders)
+  const [filters, setFilters] = useState<ExtendedBillFilters>({});
+  const [sortBy, setSortBy] = useState<string>('issue_date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // --- Add Bill Form State ---
+  const [newBill, setNewBill] = useState<Partial<Bill>>({
+    bill_number: '',
+    supplier_id: '',
+    issue_date: new Date().toISOString().split('T')[0],
+    due_date: '',
+    bill_reference: '',
+    description: '',
+    notes: '',
+    amount: 0,
+    project_id: project.id,
+    status: 'Pending',
+  })
+  const [newBillItems, setNewBillItems] = useState<Partial<BillItem>[]>([{
+    description: '',
+    quantity: 1,
+    unit: '',
+    unit_cost: 0,
+    amount: 0,
+  }])
+  const [isSubmittingBill, setIsSubmittingBill] = useState(false)
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+
+  // --- Edit Bill Form State ---
+  const [editBillData, setEditBillData] = useState<Partial<Bill>>({})
+  const [editBillItems, setEditBillItems] = useState<Partial<BillItem>[]>([])
+  const [itemsToDelete, setItemsToDelete] = useState<string[]>([])
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false)
+
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
+  // Fetch suppliers for dropdown
+  useEffect(() => {
+    const fetchSuppliers = async () => {
+      const { data, error } = await supabase.from('suppliers').select('*').order('name', { ascending: true })
+      if (!error && data) setSuppliers(data)
+    }
+    if (isCreateBillDialogOpen) fetchSuppliers()
+  }, [isCreateBillDialogOpen, supabase])
+
+  // --- Data Fetching --- 
+  const fetchData = useCallback(async (options?: Partial<FetchBillsOptions>) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const fetchOptions: FetchBillsOptions = {
+        projectId: project.id,
+        pageSize: 50, // Example page size
+        filters: filters, // Apply current filters
+        sortBy: sortBy,
+        sortDirection: sortDirection,
+        ...options // Allow overriding defaults
+      }
+      const response = await getBills(fetchOptions);
+      setBills(response.data);
+    } catch (err) {
+      console.error("Error fetching bills:", err)
+      setError(err instanceof Error ? err.message : "Failed to load bills.")
+      toast({ title: "Error Loading Bills", description: err instanceof Error ? err.message : "Could not fetch bills data.", variant: "destructive" })
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [project.id, filters, sortBy, sortDirection, toast])
+
+  const refreshData = useCallback(() => {
+    setRefreshing(true);
+    fetchData();
+    if (contextRefreshData) contextRefreshData(); // Call context refresh if available
+  }, [fetchData, contextRefreshData]);
+
+  // --- Effects --- 
+  useEffect(() => {
+    fetchData(); // Initial fetch based on default filters/sort
+  }, [fetchData])
+
+  useEffect(() => {
+    // Handle opening detail view or PO conversion dialog from URL parameters
+    const poId = searchParams.get('po');
+    const viewBillId = searchParams.get('view');
+    const specificBillId = searchParams.get('bill');
+    
+    if (poId && !isConvertingPO && !poToConvert) {
+      fetchPurchaseOrderData(poId);
+    } else if ((viewBillId || specificBillId) && !selectedBill && !loading) {
+      // Use either view or bill parameter
+      const billId = viewBillId || specificBillId;
+      // Try to find in list first
+      const billInList = bills.find(b => b.id === billId || b.bill_number === billId);
+      if (billInList) {
+        setSelectedBill(billInList);
+        console.log(`Found and selected bill: ${billId}`);
+      } else {
+        // If not in list (e.g., direct link), fetch it
+        console.log(`Fetching bill by ID: ${billId}`);
+        getBillById(billId as string).then(fetchedBill => {
+          setSelectedBill(fetchedBill);
+          console.log(`Successfully fetched bill: ${billId}`);
+        }).catch((error) => {
+          console.error(`Error fetching bill ${billId}:`, error);
+          toast({ title: "Bill Not Found", description: `Could not find bill: ${billId}`, variant: "destructive" });
+          router.replace(`/projects/${project.id}/cost-control/bills`);
+        });
+      }
+    } else if (!viewBillId && !specificBillId && !poId && selectedBill && !loading) {
+      // If there are no parameters but we have a selected bill, clear it
+      console.log("URL parameters cleared, closing bill view");
+      setSelectedBill(null);
+      setIsPaymentDialogOpen(false);
+      setCurrentBillIdForPayment(null);
+      setIsHandlingPaymentClick(false);
+    }
+  }, [searchParams, project.id, loading, isConvertingPO, bills, selectedBill, poToConvert, router, toast]);
+
+  // Special handler for payment dialog via URL parameter
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const showPayment = params.get('showPayment');
+    const billId = params.get('billId');
+    
+    if (showPayment === 'true' && billId) {
+      console.log("URL payment parameters detected, opening payment dialog for bill:", billId);
+      
+      // Find the bill in the list
+      const bill = bills.find(b => b.id === billId);
+      if (bill) {
+        // Set bill ID and open dialog
+        setSelectedBill(bill);
+        setCurrentBillIdForPayment(billId);
+        setIsPaymentDialogOpen(true);
+        
+        // Clean URL without reloading page
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search.replace(/[?&]showPayment=true/, '').replace(/[?&]billId=[^&]+/, ''));
+      }
+    }
+  }, [bills]);
+
+  // --- Handlers (fetchPurchaseOrderData, handleCreateBillFromPO, deleteBill remain similar) ---
+  const fetchPurchaseOrderData = async (poId: string) => {
+    setIsConvertingPO(true);
+    try {
+      const { data: poData, error: poError } = await supabase
+        .from('purchase_orders').select('*').eq('id', poId).single();
+      if (poError) throw poError;
+      if (poData.status === 'Billed' || poData.linked_bill) {
+        toast({ title: "Already Billed", description: `PO ${poData.po_number} linked to bill ${poData.linked_bill || '?'}.` });
+        router.replace(`/projects/${project.id}/cost-control/bills`); setIsConvertingPO(false); return;
+      }
+      if (poData.status !== 'Approved') {
+        toast({ title: "Cannot Convert", description: "Only approved POs can be converted.", variant: "destructive" });
+        router.replace(`/projects/${project.id}/cost-control/bills`); setIsConvertingPO(false); return;
+      }
+      
+      // Generate automatic bill number
+      const autoBillNumber = await generateBillNumber(project.id);
+      
+      setPoToConvert(poData);
+      setConvertPoBillDetails({ 
+        billNumber: autoBillNumber, 
+        issueDate: new Date().toISOString().split('T')[0], 
+        dueDate: '' 
+      });
+      setIsCreateBillDialogOpen(true); // This is the PO conversion dialog
+    } catch (error) {
+      console.error("Error fetching PO for conversion:", error);
+      toast({ title: "Error", description: "Failed to fetch PO data.", variant: "destructive" });
+      router.replace(`/projects/${project.id}/cost-control/bills`); setIsConvertingPO(false);
+    } 
+  }
+
+  const handleCreateBillFromPO = async () => {
+    if (!poToConvert || !convertPoBillDetails.billNumber || !convertPoBillDetails.issueDate || !convertPoBillDetails.dueDate) {
+       toast({ title: "Missing Information", description: "Bill Number, Issue Date, and Due Date are required.", variant: "destructive" }); return;
+    }
+    setIsConvertingPO(true);
+    try {
+      const billDetails: Partial<Bill> = {
+        bill_number: convertPoBillDetails.billNumber, issue_date: convertPoBillDetails.issueDate, due_date: convertPoBillDetails.dueDate, name: poToConvert.name
+      };
+      await createBillFromPurchaseOrder(poToConvert.id, billDetails);
+      toast({ title: "Bill Created", description: `Bill ${billDetails.bill_number} created successfully.` });
+      setIsCreateBillDialogOpen(false); setPoToConvert(null); setConvertPoBillDetails({ billNumber: '', issueDate: '', dueDate: '' });
+      router.replace(`/projects/${project.id}/cost-control/bills`); refreshData();
+    } catch (error) {
+      console.error("Error creating bill from PO:", error); toast({ title: "Error", description: "Failed to create bill from PO.", variant: "destructive" });
+    } finally { setIsConvertingPO(false); }
+  };
+
+  const handleAddBillClick = () => {
+    setIsCreateBillDialogOpen(true)
+    
+    // Generate automatic bill number
+    generateBillNumber(project.id)
+      .then(billNumber => {
+        setNewBill(prev => ({ ...prev, bill_number: billNumber }))
+      })
+      .catch(error => {
+        console.error("Error generating bill number:", error)
+        // Continue with empty bill number field if there's an error
+      })
+  }
+  
+  const handleExportToPDF = () => { toast({ title: "Export PDF", description: "Not implemented yet."}) }
+  const handleExportToExcel = () => { toast({ title: "Export Excel", description: "Not implemented yet."}) }
+
+  const handleRecordPaymentClick = (bill: BillWithRelations) => {
+    // Prevent multiple rapid invocations
+    if (isHandlingPaymentClick) {
+      console.log("Preventing duplicate payment click");
+      return;
+    }
+    
+    console.log("Record Payment button clicked for bill:", bill.id);
+    setIsHandlingPaymentClick(true);
+    
+    try {
+      // Set the bill and bill ID for the payment dialog
+      setSelectedBill(bill);
+      setCurrentBillIdForPayment(bill.id);
+      
+      // Ensure we close any other dialogs that might be open
+      setIsCreateBillDialogOpen(false);
+      setIsEditBillDialogOpen(false);
+      
+      // Open the payment dialog
+      setIsPaymentDialogOpen(true);
+      
+      // Also fetch latest data for good measure
+      getBillById(bill.id)
+        .then(updatedBill => {
+          console.log("Fetched latest bill data for payment");
+          setSelectedBill(updatedBill);
+        })
+        .catch(err => {
+          console.error("Error fetching bill for payment:", err);
+          toast({ 
+            title: "Error", 
+            description: "Failed to load bill data for payment. Please try again.", 
+            variant: "destructive" 
+          });
+        })
+        .finally(() => {
+          setIsHandlingPaymentClick(false);
+        });
+    } catch (error) {
+      console.error("Error in handleRecordPaymentClick:", error);
+      toast({ 
+        title: "Error", 
+        description: "An unexpected error occurred. Please try again.", 
+        variant: "destructive" 
+      });
+      setIsHandlingPaymentClick(false);
+    }
+  };
+
+  const handleViewBill = (bill: BillWithRelations) => {
+    console.log("View bill button clicked for bill:", bill.id);
+    setLoading(true);
+    getBillById(bill.id).then(fullBillData => {
+      setSelectedBill(fullBillData);
+      router.push(`/projects/${project.id}/cost-control/bills?view=${bill.id}`, { scroll: false });
+    }).catch(err => {
+      toast({ title: "Error", description: "Could not load bill details.", variant: "destructive"}); console.error(err);
+    }).finally(() => setLoading(false));
+  };
+  
+  const handleCloseBillView = () => {
+    console.log("Closing bill view");
+    setSelectedBill(null);
+    // Make sure dialog states are reset when leaving bill view
+    setIsPaymentDialogOpen(false);
+    setCurrentBillIdForPayment(null);
+    setIsHandlingPaymentClick(false);
+    
+    // If there's a URL parameter, clear it by replacing the URL
+    const currentParams = new URLSearchParams(window.location.search);
+    if (currentParams.has('view') || currentParams.has('bill')) {
+      router.replace(`/projects/${project.id}/cost-control/bills`, { scroll: false });
+    }
+  };
+
+  const handleEditBillClick = (bill: BillWithRelations) => {
+    console.log("Edit bill button clicked for bill:", bill.id);
+    
+    try {
+      // Fetch the latest bill data to ensure we have everything
+      setLoading(true);
+      getBillById(bill.id)
+        .then(fullBillData => {
+          console.log("Fetched latest bill data for editing:", fullBillData);
+          
+          // Set the selected bill data for editing
+          setSelectedBill(fullBillData);
+          setEditBillData({
+            bill_number: fullBillData.bill_number,
+            supplier_id: fullBillData.supplier_id,
+            issue_date: fullBillData.issue_date?.split('T')[0],
+            due_date: fullBillData.due_date?.split('T')[0],
+            bill_reference: fullBillData.bill_reference,
+            description: fullBillData.description,
+            notes: fullBillData.notes,
+          });
+          
+          // Set the bill items
+          setEditBillItems(fullBillData.items ? [...fullBillData.items] : []);
+          setItemsToDelete([]);
+          
+          // Open the edit dialog
+          setIsEditBillDialogOpen(true);
+        })
+        .catch(err => {
+          console.error("Error fetching bill for editing:", err);
+          toast({ 
+            title: "Error", 
+            description: "Failed to load bill data for editing. Please try again.", 
+            variant: "destructive" 
+          });
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } catch (error) {
+      console.error("Error in handleEditBillClick:", error);
+      toast({ 
+        title: "Error", 
+        description: "An unexpected error occurred. Please try again.", 
+        variant: "destructive" 
+      });
+      setLoading(false);
+    }
+  }
+  
+  const handleDeleteBill = async (billId: string) => {
+    console.log("Delete bill button clicked for bill:", billId);
+    if (!window.confirm("Delete this bill? This action cannot be undone.")) return;
+    
+    try {
+      setLoading(true);
+      await deleteBill(billId);
+      toast({ title: "Bill Deleted", description: "The bill has been deleted successfully." });
+      if (selectedBill?.id === billId) handleCloseBillView();
+      refreshData();
+    } catch (error) {
+      toast({ 
+        title: "Error", 
+        description: "Failed to delete bill. Please try again.", 
+        variant: "destructive" 
+      });
+      console.error(error);
+    } finally { 
+      setLoading(false); 
+    }
+  }
+  
+  // --- Handler for submitting payment from dialog ---
+  const handlePaymentSubmit = async (paymentData: Partial<BillPayment>) => {
+    console.log("Payment submit handler called with data:", paymentData);
+    try {
+      // Use either selectedBill.id or the saved currentBillIdForPayment
+      const billId = selectedBill?.id || currentBillIdForPayment;
+      
+      if (!billId) {
+        console.error("No selected bill available");
+        toast({ title: "Error", description: "Missing bill information", variant: "destructive" });
+        return;
+      }
+      
+      if (!paymentData.amount || paymentData.amount <= 0) {
+        console.error("Invalid payment amount:", paymentData.amount);
+        toast({ title: "Error", description: "Please enter a valid payment amount", variant: "destructive" });
+        return;
+      }
+      
+      if (!paymentData.payment_date) {
+        console.error("Missing payment date");
+        toast({ title: "Error", description: "Please enter a payment date", variant: "destructive" });
+        return;
+      }
+      
+      // Ensure bill_id is set
+      const completePaymentData: Partial<BillPayment> = {
+        ...paymentData,
+        bill_id: billId
+      };
+      
+      console.log("Submitting payment with data:", completePaymentData);
+      
+      // Record the payment
+      await recordPayment(completePaymentData);
+      console.log("Payment successfully recorded");
+      
+      // Show success message
+      toast({ 
+        title: "Payment Recorded", 
+        description: `Payment of ${formatCurrency(paymentData.amount)} recorded successfully.` 
+      });
+      
+      // Refresh data to show updated bill status and payment list
+      refreshData();
+      
+      // If viewing the bill, fetch its updated details
+      if (selectedBill) {
+        const updatedBill = await getBillById(billId);
+        setSelectedBill(updatedBill);
+        console.log("Bill view updated with new data:", updatedBill);
+      }
+      
+      // Close the dialog and clear the currentBillIdForPayment
+      setIsPaymentDialogOpen(false);
+      setCurrentBillIdForPayment(null);
+    } catch (error) {
+      console.error("Error in handlePaymentSubmit:", error);
+      toast({ 
+        title: "Error", 
+        description: error instanceof Error ? error.message : "Failed to record payment", 
+        variant: "destructive" 
+      });
+    }
+  };
+  
+  const handleNewBillItemChange = (idx: number, field: string, value: any) => {
+    setNewBillItems(items => {
+      const updated = [...items]
+      updated[idx] = { ...updated[idx], [field]: value }
+      // Recalculate amount
+      if (field === 'quantity' || field === 'unit_cost') {
+        const q = Number(updated[idx].quantity) || 0
+        const u = Number(updated[idx].unit_cost) || 0
+        updated[idx].amount = q * u
+        console.log(`Recalculated amount for item ${idx}: ${q} x ${u} = ${updated[idx].amount}`)
+      }
+      return updated
+    })
+  }
+  const handleAddBillItem = () => setNewBillItems(items => [...items, { description: '', quantity: 1, unit: '', unit_cost: 0, amount: 0 }])
+  const handleRemoveBillItem = (idx: number) => setNewBillItems(items => items.length > 1 ? items.filter((_, i) => i !== idx) : items)
+
+  const handleNewBillFieldChange = (field: string, value: any) => {
+    setNewBill(bill => ({ ...bill, [field]: value }))
+  }
+
+  const handleCreateBillSubmit = async () => {
+    console.log("Create bill submit clicked")
+    console.log("Current form data:", newBill)
+    console.log("Current items:", newBillItems)
+    
+    // Validation
+    if (!newBill.bill_number?.trim() || !newBill.supplier_id || !newBill.issue_date || !newBill.due_date) {
+      console.error("Validation error - missing required fields:", { 
+        bill_number: !newBill.bill_number?.trim(), 
+        supplier_id: !newBill.supplier_id, 
+        issue_date: !newBill.issue_date, 
+        due_date: !newBill.due_date
+      })
+      toast({ title: 'Validation Error', description: 'Bill number, supplier, issue date, and due date are required.', variant: 'destructive' })
+      return
+    }
+    
+    // More lenient validation for bill items
+    const invalidItems = newBillItems.map((item, index) => ({
+      index,
+      isValid: !!item.description?.trim() && 
+               (item.quantity !== undefined && item.quantity !== null) && 
+               !!item.unit?.trim() && 
+               (item.unit_cost !== undefined && item.unit_cost !== null)
+    })).filter(item => !item.isValid);
+    
+    if (invalidItems.length > 0) {
+      console.error("Validation error - invalid bill items:", invalidItems);
+      toast({ 
+        title: 'Validation Error', 
+        description: 'All bill items must have description, quantity, unit, and unit cost.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
+    setIsSubmittingBill(true)
+    try {
+      console.log("Starting bill creation...")
+      
+      // Recalculate all amounts to be safe
+      const itemsWithCalculatedAmounts = newBillItems.map(item => ({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+        unit_cost: Number(item.unit_cost) || 0,
+        amount: (Number(item.quantity) || 0) * (Number(item.unit_cost) || 0)
+      }));
+      
+      const total = itemsWithCalculatedAmounts.reduce((sum, item) => sum + item.amount, 0);
+      const billData = { ...newBill, amount: total, project_id: project.id };
+      
+      console.log("Submitting bill with data:", billData);
+      console.log("Items with calculated amounts:", itemsWithCalculatedAmounts);
+      
+      // Check auth state before proceeding
+      const { data: authData } = await supabase.auth.getSession();
+      console.log("Auth status for create bill:", authData.session ? "Authenticated" : "Not authenticated");
+      
+      await createBill(billData, itemsWithCalculatedAmounts);
+      console.log("Bill created successfully");
+      toast({ title: 'Bill Created', description: `Bill ${newBill.bill_number} created successfully.` });
+      setIsCreateBillDialogOpen(false);
+      setNewBill({ bill_number: '', supplier_id: '', issue_date: new Date().toISOString().split('T')[0], due_date: '', bill_reference: '', description: '', notes: '', amount: 0, project_id: project.id, status: 'Pending' });
+      setNewBillItems([{ description: '', quantity: 1, unit: '', unit_cost: 0, amount: 0 }]);
+      refreshData();
+    } catch (error) {
+      console.error("Error in handleCreateBillSubmit:", error);
+      toast({ title: 'Error', description: 'Failed to create bill.', variant: 'destructive' });
+    } finally {
+      setIsSubmittingBill(false);
+    }
+  }
+
+  // --- Edit Bill Item Handlers ---
+  const handleEditBillItemChange = (idx: number, field: string, value: any) => {
+    setEditBillItems(items => {
+      const updated = [...items]
+      updated[idx] = { ...updated[idx], [field]: value }
+      // Recalculate amount
+      if (field === 'quantity' || field === 'unit_cost') {
+        const q = Number(updated[idx].quantity) || 0
+        const u = Number(updated[idx].unit_cost) || 0
+        updated[idx].amount = q * u
+      }
+      return updated
+    })
+  }
+  const handleAddEditBillItem = () => setEditBillItems(items => [...items, { description: '', quantity: 1, unit: '', unit_cost: 0, amount: 0 }])
+  const handleRemoveEditBillItem = (idx: number) => {
+    const itemToRemove = editBillItems[idx];
+    if (itemToRemove?.id) { // Only mark existing items for deletion
+      setItemsToDelete(prev => [...prev, itemToRemove.id as string]);
+    }
+    setEditBillItems(items => items.filter((_, i) => i !== idx));
+  }
+
+  const handleEditBillFieldChange = (field: string, value: any) => {
+    setEditBillData(bill => ({ ...bill, [field]: value }))
+  }
+
+  const handleEditBillSubmit = async () => {
+    if (!selectedBill) return;
+    // Validation (similar to create, adjust as needed)
+    if (!editBillData.bill_number?.trim() || !editBillData.supplier_id || !editBillData.issue_date || !editBillData.due_date) {
+      toast({ title: 'Validation Error', description: 'Bill number, supplier, issue date, and due date are required.', variant: 'destructive' })
+      return
+    }
+    if (editBillItems.some(item => !item.description?.trim() || !item.quantity || !item.unit || !item.unit_cost)) {
+      toast({ title: 'Validation Error', description: 'All bill items must have description, quantity, unit, and unit cost.', variant: 'destructive' })
+      return
+    }
+    setIsSubmittingEdit(true)
+    try {
+      const total = editBillItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+      const billData = { ...editBillData, amount: total }
+      
+      // Call updateBill service
+      await updateBill(selectedBill.id, billData, editBillItems, itemsToDelete)
+      
+      toast({ title: 'Bill Updated', description: `Bill ${editBillData.bill_number} updated successfully.` })
+      setIsEditBillDialogOpen(false)
+      refreshData() // Refresh the main list
+      // Refresh the selected bill view if it's the one being edited
+      const updatedBill = await getBillById(selectedBill.id);
+      setSelectedBill(updatedBill);
+
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update bill.', variant: 'destructive' })
+    } finally {
+      setIsSubmittingEdit(false)
+    }
+  }
+
+  // --- Render Logic ---
+  if (loading && bills.length === 0) {
+    return <div className="h-40 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
+  }
+  
+  if (error) {
+    return (
+      <div className="p-4 bg-red-50 text-red-700 rounded"><AlertCircle className="inline mr-2" />Error: {error}
+       <Button onClick={refreshData} variant="outline" size="sm" className="ml-4">Try Again</Button></div>
+    )
+  }
+  
+  // --- Bill Detail View ---
+  if (selectedBill) {
+    const paidAmount = selectedBill.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const dueAmount = selectedBill.amount - paidAmount;
+
+    return (
+      <div className="p-1 space-y-6">
+        <div className="text-xs text-gray-500 mb-2">{authStatus}</div>
+        {/* Header */}
+        <div className="flex items-center gap-4 pb-4 border-b">
+          <Button variant="ghost" className="h-8 w-8 p-0" onClick={handleCloseBillView}><ArrowLeft className="h-4 w-4" /></Button>
+          <div className="flex-1">
+            <h1 className="text-xl font-semibold">{selectedBill.name || `Bill ${selectedBill.bill_number}`}</h1>
+            <Badge variant="outline" className={`mt-1 ${getStatusColor(selectedBill.status)}`}>{selectedBill.status}</Badge>
+          </div>
+          <div className="flex space-x-2">
+            <Button 
+              size="sm" 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (selectedBill) {
+                  console.log("Record Payment button clicked from bill detail view");
+                  console.log("DEBUG - selectedBill:", selectedBill);
+                  
+                  // PURE VANILLA JS APPROACH
+                  // This bypasses React rendering entirely and injects the form directly into the DOM
+                  const createVanillaPaymentForm = () => {
+                    console.log("Creating pure vanilla payment form");
+                    
+                    // Remove any existing payment forms
+                    const existingForm = document.getElementById('vanilla-payment-form');
+                    if (existingForm) {
+                      existingForm.remove();
+                    }
+                    
+                    // Create container
+                    const container = document.createElement('div');
+                    container.id = 'vanilla-payment-form';
+                    container.style.position = 'fixed';
+                    container.style.top = '0';
+                    container.style.left = '0';
+                    container.style.width = '100%';
+                    container.style.height = '100%';
+                    container.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                    container.style.display = 'flex';
+                    container.style.alignItems = 'center';
+                    container.style.justifyContent = 'center';
+                    container.style.zIndex = '99999';
+                    
+                    // Create form content
+                    const formContent = document.createElement('div');
+                    formContent.style.backgroundColor = 'white';
+                    formContent.style.borderRadius = '8px';
+                    formContent.style.padding = '20px';
+                    formContent.style.width = '90%';
+                    formContent.style.maxWidth = '500px';
+                    formContent.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+                    
+                    // Header
+                    const header = document.createElement('div');
+                    header.style.display = 'flex';
+                    header.style.justifyContent = 'space-between';
+                    header.style.alignItems = 'center';
+                    header.style.marginBottom = '16px';
+                    
+                    const title = document.createElement('h3');
+                    title.textContent = `Record Payment for Bill ${(selectedBill as BillWithRelations).bill_number}`;
+                    title.style.fontWeight = 'bold';
+                    title.style.fontSize = '18px';
+                    
+                    const closeBtn = document.createElement('button');
+                    closeBtn.textContent = '✕';
+                    closeBtn.style.background = 'none';
+                    closeBtn.style.border = 'none';
+                    closeBtn.style.fontSize = '20px';
+                    closeBtn.style.cursor = 'pointer';
+                    closeBtn.style.color = '#666';
+                    closeBtn.onclick = () => container.remove();
+                    
+                    header.appendChild(title);
+                    header.appendChild(closeBtn);
+                    formContent.appendChild(header);
+                    
+                    // Bill info
+                    const paidAmount = (selectedBill as BillWithRelations).payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+                    const dueAmount = (selectedBill as BillWithRelations).amount - paidAmount;
+                    
+                    const billInfo = document.createElement('div');
+                    billInfo.style.marginBottom = '20px';
+                    billInfo.style.fontSize = '14px';
+                    billInfo.style.color = '#666';
+                    billInfo.textContent = `Bill Amount: ${formatCurrency((selectedBill as BillWithRelations).amount || 0)} | Due: ${formatCurrency(dueAmount)}`;
+                    formContent.appendChild(billInfo);
+                    
+                    // Form fields
+                    const fields = [
+                      { id: 'amount', label: 'Payment Amount*', type: 'number', placeholder: '0.00', value: (selectedBill as BillWithRelations).amount.toString() },
+                      { id: 'date', label: 'Payment Date*', type: 'date', value: new Date().toISOString().split('T')[0] },
+                      { id: 'method', label: 'Payment Method', type: 'text', placeholder: 'e.g. Bank Transfer, Cash, Check' },
+                      { id: 'reference', label: 'Reference', type: 'text', placeholder: 'e.g. Transaction ID, Check Number' },
+                      { id: 'note', label: 'Notes', type: 'text', placeholder: 'Additional notes (optional)' }
+                    ];
+                    
+                    const form = document.createElement('form');
+                    form.style.display = 'grid';
+                    form.style.gap = '16px';
+                    
+                    fields.forEach(field => {
+                      const fieldContainer = document.createElement('div');
+                      
+                      const label = document.createElement('label');
+                      label.setAttribute('for', `payment-${field.id}`);
+                      label.textContent = field.label;
+                      label.style.display = 'block';
+                      label.style.marginBottom = '4px';
+                      label.style.fontWeight = '500';
+                      
+                      const input = document.createElement('input');
+                      input.id = `payment-${field.id}`;
+                      input.type = field.type;
+                      input.placeholder = field.placeholder || '';
+                      input.value = field.value || '';
+                      input.style.width = '100%';
+                      input.style.padding = '8px 12px';
+                      input.style.border = '1px solid #ddd';
+                      input.style.borderRadius = '4px';
+                      
+                      fieldContainer.appendChild(label);
+                      fieldContainer.appendChild(input);
+                      form.appendChild(fieldContainer);
+                    });
+                    
+                    formContent.appendChild(form);
+                    
+                    // Buttons
+                    const buttons = document.createElement('div');
+                    buttons.style.display = 'flex';
+                    buttons.style.justifyContent = 'flex-end';
+                    buttons.style.gap = '8px';
+                    buttons.style.marginTop = '24px';
+                    
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = 'Cancel';
+                    cancelBtn.style.padding = '8px 16px';
+                    cancelBtn.style.borderRadius = '4px';
+                    cancelBtn.style.border = '1px solid #ddd';
+                    cancelBtn.style.backgroundColor = 'white';
+                    cancelBtn.style.cursor = 'pointer';
+                    cancelBtn.onclick = (e) => {
+                      e.preventDefault();
+                      container.remove();
+                    };
+                    
+                    const submitBtn = document.createElement('button');
+                    submitBtn.textContent = 'Record Payment';
+                    submitBtn.style.padding = '8px 16px';
+                    submitBtn.style.borderRadius = '4px';
+                    submitBtn.style.border = 'none';
+                    submitBtn.style.backgroundColor = 'hsl(220, 60%, 50%)';
+                    submitBtn.style.color = 'white';
+                    submitBtn.style.cursor = 'pointer';
+                    submitBtn.onclick = async (e) => {
+                      e.preventDefault();
+                      
+                      const amountInput = document.getElementById('payment-amount') as HTMLInputElement;
+                      const dateInput = document.getElementById('payment-date') as HTMLInputElement;
+                      const methodInput = document.getElementById('payment-method') as HTMLInputElement;
+                      const referenceInput = document.getElementById('payment-reference') as HTMLInputElement;
+                      const noteInput = document.getElementById('payment-note') as HTMLInputElement;
+                      
+                      const amount = parseFloat(amountInput.value);
+                      
+                      if (isNaN(amount) || amount <= 0) {
+                        alert('Please enter a valid payment amount');
+                        return;
+                      }
+                      
+                      if (!dateInput.value) {
+                        alert('Please enter a payment date');
+                        return;
+                      }
+                      
+                      submitBtn.textContent = 'Processing...';
+                      submitBtn.disabled = true;
+                      
+                      try {
+                        const paymentData: Partial<BillPayment> = {
+                          bill_id: (selectedBill as BillWithRelations).id,
+                          amount,
+                          payment_date: dateInput.value,
+                          payment_method: methodInput.value || null,
+                          reference: referenceInput.value || null,
+                          note: noteInput.value || null,
+                          status: 'Completed'
+                        };
+                        
+                        console.log("Submitting payment with data:", paymentData);
+                        
+                        // Create a status message element to show progress
+                        const statusMsg = document.createElement('div');
+                        statusMsg.style.position = 'absolute';
+                        statusMsg.style.bottom = '60px';
+                        statusMsg.style.left = '0';
+                        statusMsg.style.width = '100%';
+                        statusMsg.style.textAlign = 'center';
+                        statusMsg.style.padding = '8px';
+                        statusMsg.style.backgroundColor = '#f0f9ff';
+                        statusMsg.style.borderRadius = '4px';
+                        statusMsg.style.color = '#0369a1';
+                        statusMsg.textContent = 'Processing payment...';
+                        formContent.appendChild(statusMsg);
+                        
+                        // Make sure we have access to the recordPayment function
+                        if (typeof recordPayment !== 'function') {
+                          throw new Error('recordPayment function not available');
+                        }
+                        
+                        // Direct call to record payment
+                        const result = await recordPayment(paymentData);
+                        console.log("Payment API response:", result);
+                        
+                        // Alternative direct API call if the function isn't working
+                        if (!result) {
+                          statusMsg.textContent = 'Using direct API call...';
+                          
+                          // Get the Supabase client
+                          const supabase = createClient();
+                          
+                          // Insert the payment record directly
+                          const { data, error } = await supabase
+                            .from('bill_payments')
+                            .insert({
+                              bill_id: (selectedBill as BillWithRelations).id,
+                              amount,
+                              payment_date: dateInput.value,
+                              payment_method: methodInput.value || null,
+                              reference: referenceInput.value || null,
+                              note: noteInput.value || null,
+                              status: 'Completed'
+                            })
+                            .select();
+                            
+                          if (error) throw error;
+                          console.log("Direct payment insert result:", data);
+                        }
+                        
+                        console.log("Payment submitted successfully");
+                        
+                        // Update the status message before closing
+                        statusMsg.style.backgroundColor = '#f0fdf4';
+                        statusMsg.style.color = '#166534';
+                        statusMsg.textContent = 'Payment recorded successfully!';
+                        
+                        // Delay closing to show success message
+                        setTimeout(() => {
+                          container.remove();
+                          
+                          // Show a more visible success message
+                          const successMsg = document.createElement('div');
+                          successMsg.style.position = 'fixed';
+                          successMsg.style.top = '20px';
+                          successMsg.style.left = '50%';
+                          successMsg.style.transform = 'translateX(-50%)';
+                          successMsg.style.padding = '12px 24px';
+                          successMsg.style.backgroundColor = '#f0fdf4';
+                          successMsg.style.color = '#166534';
+                          successMsg.style.borderRadius = '4px';
+                          successMsg.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+                          successMsg.style.zIndex = '99999';
+                          successMsg.textContent = `Payment of ${formatCurrency(amount)} recorded successfully!`;
+                          document.body.appendChild(successMsg);
+                          
+                          // Remove the success message after 3 seconds
+                          setTimeout(() => {
+                            successMsg.remove();
+                          }, 3000);
+                          
+                          // Refresh the page to show updated data
+                          // This is more reliable than using the React refresh
+                          window.location.reload();
+                        }, 1000);
+                      } catch (error: any) {
+                        console.error("Error submitting payment:", error);
+                        
+                        // Show detailed error in the form
+                        const errorMsg = document.createElement('div');
+                        errorMsg.style.padding = '12px';
+                        errorMsg.style.marginTop = '16px';
+                        errorMsg.style.backgroundColor = '#fef2f2';
+                        errorMsg.style.color = '#b91c1c';
+                        errorMsg.style.borderRadius = '4px';
+                        errorMsg.style.fontWeight = '500';
+                        errorMsg.textContent = `Error: ${error.message || 'Failed to record payment'}`;
+                        formContent.appendChild(errorMsg);
+                        
+                        // Re-enable the button
+                        submitBtn.textContent = 'Record Payment';
+                        submitBtn.disabled = false;
+                      }
+                    };
+                    
+                    buttons.appendChild(cancelBtn);
+                    buttons.appendChild(submitBtn);
+                    formContent.appendChild(buttons);
+                    
+                    // Add form to container
+                    container.appendChild(formContent);
+                    
+                    // Handle backdrop click
+                    container.addEventListener('click', (e) => {
+                      if (e.target === container) {
+                        container.remove();
+                      }
+                    });
+                    
+                    // Add to document
+                    document.body.appendChild(container);
+                  };
+                  
+                  // Call the function to create the vanilla form
+                  setTimeout(createVanillaPaymentForm, 100);
+                }
+              }}
+              className={selectedBill.status === 'Paid' || paidAmount >= selectedBill.amount ? "bg-gray-300 hover:bg-gray-300 cursor-not-allowed" : ""}
+              disabled={selectedBill.status === 'Paid' || paidAmount >= selectedBill.amount}
+            >
+              <DollarSign className="h-4 w-4 mr-1" /> 
+              {selectedBill.status === 'Paid' || paidAmount >= selectedBill.amount ? "Fully Paid" : "Record Payment"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleEditBillClick(selectedBill)}>Edit</Button>
+            <Button size="sm" variant="destructive" onClick={() => handleDeleteBill(selectedBill.id)}>Delete</Button>
+          </div>
+        </div>
+
+        {/* General Info Card */}
+        <Card>
+          <CardHeader><CardTitle>General Information</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div><Label className="text-muted-foreground">Bill Number</Label><p>{selectedBill.bill_number}</p></div>
+              <div><Label className="text-muted-foreground">Supplier</Label><p>{selectedBill.supplier?.name || 'N/A'}</p></div>
+              <div><Label className="text-muted-foreground">PO Number</Label>
+                {selectedBill.purchase_order ? 
+                  <a href={`/projects/${project.id}/cost-control/purchase-works?view=${selectedBill.purchase_order.id}`} className="text-blue-600 hover:underline">{selectedBill.purchase_order.po_number}</a>
+                  : 'N/A'}
+              </div>
+              <div><Label className="text-muted-foreground">Issue Date</Label><p>{new Date(selectedBill.issue_date).toLocaleDateString()}</p></div>
+              <div><Label className="text-muted-foreground">Due Date</Label><p>{new Date(selectedBill.due_date).toLocaleDateString()}</p></div>
+              <div><Label className="text-muted-foreground">Reference</Label><p>{selectedBill.bill_reference || 'N/A'}</p></div>
+              <div className="md:col-span-3"><Label className="text-muted-foreground">Description</Label><p>{selectedBill.description || 'N/A'}</p></div>
+              <div className="md:col-span-3"><Label className="text-muted-foreground">Notes</Label><p>{selectedBill.notes || 'N/A'}</p></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Bill Items Card */}
+        <Card>
+           <CardHeader><CardTitle>Bill Items</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Unit Cost</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {selectedBill.items && selectedBill.items.length > 0 ? (
+                  selectedBill.items.map(item => (
+                    <TableRow key={item.id} className="text-sm">
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell>{item.unit}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(item.unit_cost)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency(item.amount)}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-4">No items found</TableCell></TableRow>
+                )}
+                 <TableRow className="bg-gray-50 dark:bg-gray-800 font-semibold">
+                    <TableCell colSpan={4} className="text-right">Bill Total</TableCell>
+                    <TableCell className="text-right">{formatCurrency(selectedBill.amount)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {/* Payment History Card */}
+        <Card>
+          <CardHeader><CardTitle>Payment History</CardTitle></CardHeader>
+          <CardContent className="p-0">
+             <Table>
+               <TableHeader>
+                 <TableRow>
+                   <TableHead>Date</TableHead>
+                   <TableHead className="text-right">Amount Paid</TableHead>
+                   <TableHead>Method</TableHead>
+                   <TableHead>Reference</TableHead>
+                   <TableHead>Notes</TableHead>
+                 </TableRow>
+               </TableHeader>
+               <TableBody>
+                 {selectedBill.payments && selectedBill.payments.length > 0 ? (
+                   selectedBill.payments.map(payment => (
+                     <TableRow key={payment.id} className="text-sm">
+                       <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
+                       <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
+                       <TableCell>{payment.payment_method || 'N/A'}</TableCell>
+                       <TableCell>{payment.reference || 'N/A'}</TableCell>
+                       <TableCell>{payment.note || 'N/A'}</TableCell>
+                     </TableRow>
+                   ))
+                 ) : (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-4">No payments recorded</TableCell></TableRow>
+                 )}
+                 <TableRow className="bg-gray-50 dark:bg-gray-800 font-semibold">
+                    <TableCell colSpan={1} className="text-right">Total Paid:</TableCell>
+                    <TableCell className="text-right">{formatCurrency(paidAmount)}</TableCell>
+                    <TableCell colSpan={2} className="text-right">Amount Due:</TableCell>
+                    <TableCell className="text-right">{formatCurrency(dueAmount)}</TableCell>
+                </TableRow>
+               </TableBody>
+             </Table>
+            </CardContent>
+         </Card>
+
+         {/* TODO: Attachments Section */} 
+         {/* TODO: Comments Section */} 
+      </div>
+    );
+  }
+  
+  // --- Main Bills Table View ---
+  return (
+    <div className="space-y-6">
+      <div className="text-xs text-gray-500 mb-2">{authStatus}</div>
+      {/* Remove Placeholder Dialogs */}
+      <Dialog open={isEditBillDialogOpen} onOpenChange={setIsEditBillDialogOpen}>
+        {selectedBill && (
+          <DialogContent className="max-w-2xl">
+            <DialogHeader><DialogTitle>Edit Bill</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Bill Number*</Label>
+                  <Input value={editBillData.bill_number || ''} onChange={e => handleEditBillFieldChange('bill_number', e.target.value)} placeholder="e.g. BILL-001" />
+                </div>
+                <div>
+                  <Label>Supplier*</Label>
+                  <select 
+                    className="w-full border rounded h-9 px-2 bg-background text-foreground" 
+                    value={editBillData.supplier_id || ''} 
+                    onChange={e => handleEditBillFieldChange('supplier_id', e.target.value)}
+                    style={{ display: 'block' }} // Force display
+                  >
+                    <option value="">Select supplier</option>
+                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Issue Date*</Label>
+                  <Input type="date" value={editBillData.issue_date?.split('T')[0] || ''} onChange={e => handleEditBillFieldChange('issue_date', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Due Date*</Label>
+                  <Input type="date" value={editBillData.due_date?.split('T')[0] || ''} onChange={e => handleEditBillFieldChange('due_date', e.target.value)} />
+                </div>
+                <div className="col-span-2">
+                  <Label>Reference</Label>
+                  <Input value={editBillData.bill_reference || ''} onChange={e => handleEditBillFieldChange('bill_reference', e.target.value)} placeholder="Reference (optional)" />
+                </div>
+                <div className="col-span-2">
+                  <Label>Description</Label>
+                  <Input value={editBillData.description || ''} onChange={e => handleEditBillFieldChange('description', e.target.value)} placeholder="Description (optional)" />
+                </div>
+                <div className="col-span-2">
+                  <Label>Notes</Label>
+                  <Input value={editBillData.notes || ''} onChange={e => handleEditBillFieldChange('notes', e.target.value)} placeholder="Notes (optional)" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <Label>Bill Items*</Label>
+                <div className="space-y-2">
+                  {editBillItems.map((item, idx) => (
+                    <div key={idx} className="grid grid-cols-6 gap-2 items-center border rounded p-2">
+                      <Input className="col-span-2" placeholder="Description" value={item.description || ''} onChange={e => handleEditBillItemChange(idx, 'description', e.target.value)} />
+                      <Input className="col-span-1" type="number" min="1" placeholder="Qty" value={item.quantity ?? ''} onChange={e => handleEditBillItemChange(idx, 'quantity', Number(e.target.value))} />
+                      <Input className="col-span-1" placeholder="Unit" value={item.unit || ''} onChange={e => handleEditBillItemChange(idx, 'unit', e.target.value)} />
+                      <Input className="col-span-1" type="number" min="0" step="0.01" placeholder="Unit Cost" value={item.unit_cost ?? ''} onChange={e => handleEditBillItemChange(idx, 'unit_cost', Number(e.target.value))} />
+                      <div className="col-span-1 flex items-center gap-1">
+                        <span className="font-medium">{formatCurrency(item.amount || 0)}</span>
+                        <Button type="button" size="icon" variant="ghost" onClick={() => handleRemoveEditBillItem(idx)}><X className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" size="sm" className="mt-2" onClick={handleAddEditBillItem}><Plus className="h-4 w-4 mr-1" /> Add Item</Button>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsEditBillDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleEditBillSubmit} disabled={isSubmittingEdit}>{isSubmittingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
+
+      {/* Use the proper RecordPaymentDialog component */}
+      <RecordPaymentDialog 
+        isOpen={isPaymentDialogOpen}
+        onClose={() => {
+          setIsPaymentDialogOpen(false);
+          setCurrentBillIdForPayment(null);
+        }}
+        bill={selectedBill}
+        onSubmit={handlePaymentSubmit}
+      />
+
+      {/* Convert PO Dialog */}
+      <Dialog open={isCreateBillDialogOpen && !!poToConvert} onOpenChange={(open) => { 
+        if (!open) {
+           setIsCreateBillDialogOpen(false); setPoToConvert(null); setIsConvertingPO(false);
+           if (searchParams.get('po')) router.replace(`/projects/${project.id}/cost-control/bills`);
+         }
+      }}>
+        {poToConvert && (
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Convert PO to Bill</DialogTitle>
+              <DialogDescription>Create a bill from PO {poToConvert.po_number}.</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 grid gap-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="billNum" className="text-right col-span-1">Bill Number*</Label>
+                <Input id="billNum" className="col-span-3" placeholder="Enter bill number" value={convertPoBillDetails.billNumber} onChange={(e) => setConvertPoBillDetails(prev => ({...prev, billNumber: e.target.value}))} />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="billDate" className="text-right col-span-1">Issue Date*</Label>
+                <Input id="billDate" type="date" className="col-span-3" value={convertPoBillDetails.issueDate} onChange={(e) => setConvertPoBillDetails(prev => ({...prev, issueDate: e.target.value}))} />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="dueDate" className="text-right col-span-1">Due Date*</Label>
+                <Input id="dueDate" type="date" className="col-span-3" value={convertPoBillDetails.dueDate} onChange={(e) => setConvertPoBillDetails(prev => ({...prev, dueDate: e.target.value}))} />
+              </div>
+              <div className="text-sm text-muted-foreground pt-2 border-t mt-2">
+                <p>PO: {poToConvert.name} ({formatCurrency(poToConvert.total ?? 0)})</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setIsCreateBillDialogOpen(false); setPoToConvert(null); setIsConvertingPO(false); router.replace(`/projects/${project.id}/cost-control/bills`); }}>Cancel</Button>
+              <Button onClick={handleCreateBillFromPO} disabled={isConvertingPO}>
+                {isConvertingPO ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Create Bill
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
+    
+      {/* Header and Actions */}
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Bills</h2>
+            <Button onClick={handleAddBillClick} className="h-9">
+              <Plus className="h-4 w-4 mr-2" /> Add Bill
+            </Button>
+          </div>
+          
+          <div className="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800/40 rounded-lg border border-gray-100 dark:border-gray-800">
+            {/* Filters */} 
+            <div className="flex gap-2 flex-wrap w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-none">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg className="h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <Input 
+                  placeholder="Search bills..." 
+                  className="pl-10 w-full sm:w-60 h-9" 
+                  onChange={(e) => setFilters((prev: ExtendedBillFilters) => ({...prev, search: e.target.value}))} 
+                />
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9">
+                    <Filter className="h-4 w-4 mr-2"/> Status <ChevronDown className="ml-1 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuRadioGroup 
+                    value={filters.status || "all"}
+                    onValueChange={(value) => setFilters((prev: ExtendedBillFilters) => ({...prev, status: value === 'all' ? undefined : value}))}
+                  >
+                    <DropdownMenuRadioItem value="all">All Statuses</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="Pending">Pending</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="Partial">Partial</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="Paid">Paid</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="Overdue">Overdue</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9">
+                    <CalendarDays className="h-4 w-4 mr-2"/> Date Range <ChevronDown className="ml-1 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-60">
+                  <div className="px-2 py-2 space-y-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="date-from">From</Label>
+                      <Input 
+                        id="date-from" 
+                        type="date" 
+                        className="h-8" 
+                        value={filters.dateFrom || ''} 
+                        onChange={(e) => setFilters((prev: ExtendedBillFilters) => ({...prev, dateFrom: e.target.value || undefined}))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="date-to">To</Label>
+                      <Input 
+                        id="date-to" 
+                        type="date" 
+                        className="h-8" 
+                        value={filters.dateTo || ''} 
+                        onChange={(e) => setFilters((prev: ExtendedBillFilters) => ({...prev, dateTo: e.target.value || undefined}))}
+                      />
+                    </div>
+                    <div className="flex justify-end pt-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="h-8 text-xs" 
+                        onClick={() => setFilters((prev: ExtendedBillFilters) => ({...prev, dateFrom: undefined, dateTo: undefined}))}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+             
+            <div className="flex space-x-2 w-full sm:w-auto justify-end">
+              <Button variant="outline" size="sm" onClick={refreshData} disabled={refreshing || loading} className="h-9">
+                <RefreshCw className={`h-4 w-4 mr-2 ${(refreshing || loading) ? 'animate-spin' : ''}`} />
+                {(refreshing || loading) ? 'Refreshing...' : 'Refresh'}
+              </Button>
+              {/* Export Buttons */} 
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9"><FileText className="h-4 w-4 mr-2" />Export</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleExportToPDF}><FileText className="mr-2 h-4 w-4" />Export to PDF</DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportToExcel}><FileSpreadsheet className="mr-2 h-4 w-4" />Export to Excel</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Bills Table */}
+      <div className="bg-background rounded-lg border shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader className="bg-gray-50 dark:bg-gray-800/50">
+            <TableRow>
+              {/* Table Headers with Sorting */}
+              <TableHead className="py-3 font-medium">
+                <Button variant="ghost" size="sm" className="font-medium h-8 -ml-3 hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => {
+                  setSortBy('bill_number');
+                  setSortDirection(sortBy === 'bill_number' && sortDirection === 'asc' ? 'desc' : 'asc');
+                  refreshData();
+                }}>
+                  Bill # {sortBy === 'bill_number' ? (sortDirection === 'asc' ? '↑' : '↓') : <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-50"/>}
+                </Button>
+              </TableHead>
+              <TableHead className="py-3 font-medium">Supplier</TableHead>
+              <TableHead className="py-3 font-medium">PO #</TableHead>
+              <TableHead className="py-3 font-medium">
+                <Button variant="ghost" size="sm" className="font-medium h-8 -ml-3 hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => {
+                  setSortBy('issue_date');
+                  setSortDirection(sortBy === 'issue_date' && sortDirection === 'asc' ? 'desc' : 'asc');
+                  refreshData();
+                }}>
+                  Issue Date {sortBy === 'issue_date' ? (sortDirection === 'asc' ? '↑' : '↓') : <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-50"/>}
+                </Button>
+              </TableHead>
+              <TableHead className="py-3 font-medium">
+                <Button variant="ghost" size="sm" className="font-medium h-8 -ml-3 hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => {
+                  setSortBy('due_date');
+                  setSortDirection(sortBy === 'due_date' && sortDirection === 'asc' ? 'desc' : 'asc');
+                  refreshData();
+                }}>
+                  Due Date {sortBy === 'due_date' ? (sortDirection === 'asc' ? '↑' : '↓') : <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-50"/>}
+                </Button>
+              </TableHead>
+              <TableHead className="text-right py-3 font-medium">
+                <Button variant="ghost" size="sm" className="font-medium h-8 -ml-3 hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => {
+                  setSortBy('amount');
+                  setSortDirection(sortBy === 'amount' && sortDirection === 'asc' ? 'desc' : 'asc');
+                  refreshData();
+                }}>
+                  Amount {sortBy === 'amount' ? (sortDirection === 'asc' ? '↑' : '↓') : <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-50"/>}
+                </Button>
+              </TableHead>
+              <TableHead className="text-right py-3 font-medium">Paid</TableHead>
+              <TableHead className="text-right py-3 font-medium">Due</TableHead>
+              <TableHead className="py-3 font-medium">
+                <Button variant="ghost" size="sm" className="font-medium h-8 -ml-3 hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => {
+                  setSortBy('status');
+                  setSortDirection(sortBy === 'status' && sortDirection === 'asc' ? 'desc' : 'asc');
+                  refreshData();
+                }}>
+                  Status {sortBy === 'status' ? (sortDirection === 'asc' ? '↑' : '↓') : <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-50"/>}
+                </Button>
+              </TableHead>
+              <TableHead className="text-center py-3 font-medium w-[100px]">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && bills.length === 0 ? (
+              <TableRow><TableCell colSpan={11} className="h-24 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></TableCell></TableRow>
+            ) : bills.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={11} className="h-24">
+                  <div className="flex flex-col items-center justify-center text-center p-4">
+                    <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+                      <FileText className="h-6 w-6 text-gray-400" />
+                    </div>
+                    <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-1">No bills found</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 max-w-md">
+                      {filters.search ? `No bills match your search term "${filters.search}"` : 
+                      filters.status ? `No bills with status "${filters.status}"` : 
+                      'No bills have been created yet for this project.'}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddBillClick}
+                      className="h-9"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Your First Bill
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              bills.map((bill) => {
+                const paidAmount = bill.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+                const dueAmount = bill.amount - paidAmount;
+                const isPastDue = new Date(bill.due_date) < new Date() && dueAmount > 0;
+                
+                // Calculate payment status
+                let paymentStatus = bill.status;
+                if (isPastDue && bill.status !== 'Paid') {
+                  paymentStatus = 'Overdue';
+                }
+                
+                return (
+                  <TableRow key={bill.id} className="hover:bg-muted/50 text-sm group">
+                    <TableCell className="py-3 font-medium">
+                      <div className="flex flex-col">
+                        <span className="font-medium">{bill.bill_number}</span>
+                        {bill.name && <span className="text-xs text-gray-500 mt-0.5">{bill.name}</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-3 max-w-[180px] truncate">
+                      {bill.supplier?.name || '-'}
+                    </TableCell>
+                    <TableCell className="py-3">
+                      {bill.purchase_order?.po_number ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">
+                          {bill.purchase_order.po_number}
+                        </span>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell className="py-3">{new Date(bill.issue_date).toLocaleDateString()}</TableCell>
+                    <TableCell className="py-3">
+                      <div className={`flex items-center ${isPastDue ? 'text-red-600 font-medium' : ''}`}>
+                        {new Date(bill.due_date).toLocaleDateString()}
+                        {isPastDue && (
+                          <span className="ml-2 text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded-sm font-medium">
+                            Overdue
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right py-3 font-medium">{formatCurrency(bill.amount)}</TableCell>
+                    <TableCell className="text-right py-3">
+                      <div className="flex flex-col items-end">
+                        <span>{formatCurrency(paidAmount)}</span>
+                        {paidAmount > 0 && (
+                          <span className="text-xs text-gray-500 mt-0.5">
+                            ({Math.round((paidAmount / bill.amount) * 100)}%)
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right py-3 font-medium">
+                      {dueAmount > 0 ? (
+                        <span className={isPastDue ? 'text-red-600' : ''}>{formatCurrency(dueAmount)}</span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-3">
+                      <StatusBadge status={paymentStatus} />
+                    </TableCell>
+                    <TableCell className="text-center py-2">
+                      <div className="flex justify-center space-x-1 opacity-80 group-hover:opacity-100">
+                        <Button variant="ghost" size="sm" onClick={() => handleViewBill(bill)} className="h-8 px-2">View</Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditBillClick(bill)}>
+                              <Pencil className="mr-2 h-4 w-4" />Edit Bill
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleRecordPaymentClick(bill);
+                              }}
+                              disabled={bill.status === 'Paid' || paidAmount >= bill.amount}
+                              className={bill.status === 'Paid' || paidAmount >= bill.amount ? "text-gray-400 cursor-not-allowed" : ""}
+                            >
+                              <DollarSign className="mr-2 h-4 w-4" />Record Payment
+                              {(bill.status === 'Paid' || paidAmount >= bill.amount) && " (Fully Paid)"}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-red-600 focus:text-red-700" onClick={() => handleDeleteBill(bill.id)}>
+                              <Trash2 className="mr-2 h-4 w-4" />Delete Bill
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      
+      {/* Pagination */}
+      <div className="flex items-center justify-between py-4">
+        <div className="text-sm text-gray-500">
+          Showing <span className="font-medium text-gray-800">{bills.length}</span> {bills.length === 1 ? 'bill' : 'bills'}
+        </div>
+        
+        {/* Add pagination controls here when implemented */}
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" size="sm" disabled className="h-8 w-8 p-0">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" disabled className="h-8 w-8 p-0">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      
+      {/* Add Bill Dialog */}
+      <Dialog open={isCreateBillDialogOpen} onOpenChange={setIsCreateBillDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create New Bill</DialogTitle>
+            <DialogDescription>Enter bill details and items.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Bill Number*</Label>
+                <Input value={newBill.bill_number || ''} onChange={e => handleNewBillFieldChange('bill_number', e.target.value)} placeholder="e.g. BILL-001" />
+              </div>
+              <div>
+                <Label>Supplier*</Label>
+                <select 
+                  className="w-full border rounded h-9 px-2 bg-background text-foreground" 
+                  value={newBill.supplier_id || ''} 
+                  onChange={e => handleNewBillFieldChange('supplier_id', e.target.value)}
+                  style={{ display: 'block' }} // Force display
+                >
+                  <option value="">Select supplier</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>Issue Date*</Label>
+                <Input type="date" value={newBill.issue_date || ''} onChange={e => handleNewBillFieldChange('issue_date', e.target.value)} />
+              </div>
+              <div>
+                <Label>Due Date*</Label>
+                <Input type="date" value={newBill.due_date || ''} onChange={e => handleNewBillFieldChange('due_date', e.target.value)} />
+              </div>
+              <div className="col-span-2">
+                <Label>Reference</Label>
+                <Input value={newBill.bill_reference || ''} onChange={e => handleNewBillFieldChange('bill_reference', e.target.value)} placeholder="Reference (optional)" />
+              </div>
+              <div className="col-span-2">
+                <Label>Description</Label>
+                <Input value={newBill.description || ''} onChange={e => handleNewBillFieldChange('description', e.target.value)} placeholder="Description (optional)" />
+              </div>
+              <div className="col-span-2">
+                <Label>Notes</Label>
+                <Input value={newBill.notes || ''} onChange={e => handleNewBillFieldChange('notes', e.target.value)} placeholder="Notes (optional)" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <Label>Bill Items*</Label>
+              <div className="space-y-2">
+                {newBillItems.map((item, idx) => (
+                  <div key={idx} className="grid grid-cols-6 gap-2 items-center border rounded p-2">
+                    <Input className="col-span-2" placeholder="Description" value={item.description || ''} onChange={e => handleNewBillItemChange(idx, 'description', e.target.value)} />
+                    <Input className="col-span-1" type="number" min="1" placeholder="Qty" value={item.quantity ?? ''} onChange={e => handleNewBillItemChange(idx, 'quantity', Number(e.target.value))} />
+                    <Input className="col-span-1" placeholder="Unit" value={item.unit || ''} onChange={e => handleNewBillItemChange(idx, 'unit', e.target.value)} />
+                    <Input className="col-span-1" type="number" min="0" step="0.01" placeholder="Unit Cost" value={item.unit_cost ?? ''} onChange={e => handleNewBillItemChange(idx, 'unit_cost', Number(e.target.value))} />
+                    <div className="col-span-1 flex items-center gap-1">
+                      <span className="font-medium">{formatCurrency(item.amount || 0)}</span>
+                      {newBillItems.length > 1 && (
+                        <Button type="button" size="icon" variant="ghost" onClick={() => handleRemoveBillItem(idx)}><X className="h-4 w-4" /></Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" className="mt-2" onClick={handleAddBillItem}><Plus className="h-4 w-4 mr-1" /> Add Item</Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateBillDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateBillSubmit} disabled={isSubmittingBill}>{isSubmittingBill ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Create Bill</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    
+      {/* TODO: Add Pagination Controls Component */}
+    </div>
+  )
+} 
