@@ -23,6 +23,10 @@ interface CreatePOData {
     price: number
     amount: number
     internal_note?: string
+    cost_control_item_id?: string
+    budget_validation_override?: boolean
+    override_reason?: string
+    catalog_item_id?: string
   }[]
 }
 
@@ -62,14 +66,21 @@ export function usePurchaseOrderActions(projectId: string) {
         description: item.description,
         quantity: item.quantity,
         unit: item.unit,
-        price: item.price,
+        unit_cost: item.price,
         amount: item.amount,
         internal_note: item.internal_note || null,
+        cost_control_item_id: item.cost_control_item_id || null,
+        budget_validation_override: item.budget_validation_override || false,
+        override_reason: item.override_reason || null,
+        catalog_item_id: item.catalog_item_id || null,
       }))
       
-      const { error: itemsError } = await supabase
+      console.log('Inserting purchase order items:', itemsToInsert)
+      
+      const { data: itemsData, error: itemsError } = await supabase
         .from('purchase_order_items')
         .insert(itemsToInsert)
+        .select()
       
       if (itemsError) throw itemsError
       
@@ -81,9 +92,21 @@ export function usePurchaseOrderActions(projectId: string) {
       return { success: true, id: poId }
     } catch (error) {
       console.error('Error creating purchase order:', error)
+      
+      // Handle specific error types
+      let errorMessage = 'Failed to create purchase order'
+      if (error && typeof error === 'object' && 'message' in error) {
+        const errorStr = error.message as string
+        if (errorStr.includes('foreign key constraint')) {
+          errorMessage = 'Invalid catalog item or cost control item selected'
+        } else if (errorStr.includes('duplicate key')) {
+          errorMessage = 'Purchase order number already exists'
+        }
+      }
+      
       toast({
         title: 'Error',
-        description: 'Failed to create purchase order',
+        description: errorMessage,
         variant: 'destructive',
       })
       return { success: false, error }
@@ -138,9 +161,13 @@ export function usePurchaseOrderActions(projectId: string) {
           description: item.description,
           quantity: item.quantity,
           unit: item.unit,
-          price: item.price,
+          unit_cost: item.price,
           amount: item.amount,
           internal_note: item.internal_note || null,
+          cost_control_item_id: item.cost_control_item_id || null,
+          budget_validation_override: item.budget_validation_override || false,
+          override_reason: item.override_reason || null,
+          catalog_item_id: item.catalog_item_id || null,
         }))
         
         const { error: itemsError } = await supabase
@@ -334,7 +361,7 @@ export function usePurchaseOrderActions(projectId: string) {
   }
   
   // Convert a PO to a bill
-  const convertToBill = async (poId: string, billData: any) => {
+  const convertToBill = async (poId: string, _billData?: any) => {
     try {
       setIsLoading(true)
       

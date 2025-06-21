@@ -67,23 +67,23 @@ function SummaryContent({ project }: SummaryTabProps) {
   const [activeTab, setActiveTab] = useState('list')
   
   const { 
-    items, 
-    totals, 
+    items: flattenedItems, 
+    summaryData, 
     isLoading, 
     isError,
     expandedItems,
-    toggleItemExpanded,
-    refreshData
+    onToggleExpand,
+    refetch
   } = useSummaryDetailData(project.id)
   
   // Count orphaned level 1 items (level 1 items at top level)
-  const orphanedElements = items.filter(item => item.level === 1 && !item.hasOwnProperty('parent_id')).length
+  const orphanedElements = flattenedItems.filter(item => item.level === 1 && !item.hasOwnProperty('parent_id')).length
   
   // Handle export functionality
   const handleExport = () => {
     // Create CSV data
     const headers = ['Name', 'Original', 'Actual', 'Difference', 'Paid Bills', 'External Bills', 'Pending Bills']
-    const rows = items.map(item => [
+    const rows = flattenedItems.map(item => [
       item.name,
       item.original.toString(),
       item.actual.toString(),
@@ -128,7 +128,7 @@ function SummaryContent({ project }: SummaryTabProps) {
     )
   }
 
-  if (items.length === 0) {
+  if (flattenedItems.length === 0) {
     return (
       <div className="p-6 text-center rounded-md border border-gray-200 bg-gray-50">
         <h3 className="text-lg font-medium mb-2">No Budget Data Available</h3>
@@ -162,11 +162,11 @@ function SummaryContent({ project }: SummaryTabProps) {
                 This can happen when the parent structures haven't been properly synced. Try refreshing the data below or fixing the orphaned elements.
               </p>
               <div className="mt-2 flex space-x-2">
-                <RefreshButton projectId={project.id} onSuccess={refreshData} />
+                <RefreshButton projectId={project.id} onSuccess={refetch} />
                 <FixOrphanedElementsButton 
                   projectId={project.id} 
                   orphanedElementsCount={orphanedElements} 
-                  onSuccess={() => refreshData({ force: true })} 
+                  onSuccess={() => refetch()} 
                 />
               </div>
             </div>
@@ -196,10 +196,9 @@ function SummaryContent({ project }: SummaryTabProps) {
           
           <TooltipProvider>
             <SummaryTable 
-              items={items} 
+              items={flattenedItems} 
               expandedItems={expandedItems}
-              onToggleExpand={toggleItemExpanded}
-              totals={totals}
+              onToggleExpand={onToggleExpand}
             />
           </TooltipProvider>
         </TabsContent>

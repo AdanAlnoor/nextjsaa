@@ -3,40 +3,45 @@ import { cn } from "@/utils/cn";
 import { ChevronLeftCircle } from "lucide-react";
 import Link from "next/link";
 import LoginForm from "./_components/login-form";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+export const metadata = {
+  title: 'Login',
+  description: 'Login to your Construction Project Manager account',
+};
 
 const LoginPage = () => {
   return (
-    <section className="container flex h-screen flex-col items-center justify-center">
-      <Button variant="outline" asChild>
-        <Link href="/" className={cn("absolute left-4 top-4")}>
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background">
+      <Button variant="ghost" size="sm" asChild className={cn("absolute left-4 top-4 md:left-8 md:top-8")}>
+        <Link href="/">
           <ChevronLeftCircle className="mr-2 h-4 w-4" />
-          Back
+          Back to Home
         </Link>
       </Button>
 
-      <div className="mx-auto max-w-80 flex flex-col justify-center space-y-6 ">
-        <div className="flex flex-col space-y-2 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Welcome back
-          </h1>
+      <Card className="z-10 w-full max-w-md mx-4">
+        <CardHeader className="space-y-1 text-center">
+          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+          <CardDescription>
+            Enter your credentials to access your projects.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LoginForm />
+        </CardContent>
+      </Card>
 
-          <p className="text-sm text-muted-foreground">
-            Enter your email and password to sign in to your account
-          </p>
-        </div>
-
-        <LoginForm />
-
-        <p className="px-8 text-center text-sm text-muted-foreground">
-          <Link
-            href="/register"
-            className="hover:text-brand underline underline-offset-4"
-          >
-            Don&apos;t have an account? Register
-          </Link>
-        </p>
-      </div>
-    </section>
+      <p className="mt-6 px-8 text-center text-sm text-muted-foreground">
+        Don&apos;t have an account?{" "}
+        <Link
+          href="/register"
+          className="font-medium text-primary underline underline-offset-4 hover:text-primary/90"
+        >
+          Register Now
+        </Link>
+      </p>
+    </div>
   );
 };
 

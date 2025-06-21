@@ -8,7 +8,7 @@ const HomePage = () => {
   return (
     <div>
       <section className="grid place-content-center place-items-center gap-6 text-center">
-        <Badge size="sm">
+        <Badge className="text-sm">
           Minimal Template with <Lock className="ml-1 w-4 h-4" />
         </Badge>
 
