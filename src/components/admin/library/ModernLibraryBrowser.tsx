@@ -14,7 +14,11 @@ import {
   Package,
   Users,
   Wrench,
-  Edit
+  Edit,
+  Trash2,
+  Plus,
+  FileSpreadsheet,
+  ChevronDown as ChevronDownIcon
 } from 'lucide-react'
 
 import {
@@ -25,7 +29,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,9 +40,34 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 import type { Division, LibraryItem } from '@/types/library'
 import { ItemFactorEditor } from './ItemFactorEditor'
+import { AddLibraryItemDialog } from './AddLibraryItemDialog'
+import { ExcelImportExportInterface } from './ExcelImportExportInterface'
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 
 interface ModernLibraryBrowserProps {
   onItemSelect?: (item: LibraryItem) => void
@@ -79,6 +107,18 @@ export function ModernLibraryBrowser({
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [itemToDelete, setItemToDelete] = useState<any>(null)
+  const [deleteItemType, setDeleteItemType] = useState<'division' | 'section' | 'assembly' | 'item'>('item')
+  const [deleteImpact, setDeleteImpact] = useState<any>(null)
+  const [canForceDelete, setCanForceDelete] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [addParentLevel, setAddParentLevel] = useState(0)
+  const [addParentId, setAddParentId] = useState<string>('')
+  const [addParentCode, setAddParentCode] = useState<string>('')
+  const [addParentName, setAddParentName] = useState<string>('')
+  const [excelDialogOpen, setExcelDialogOpen] = useState(false)
 
   // Load divisions and hierarchy
   useEffect(() => {
@@ -179,6 +219,112 @@ export function ModernLibraryBrowser({
     } else {
       setSelectedItem(item)
     }
+  }
+
+  const handleDeleteClick = async (type: 'division' | 'section' | 'assembly' | 'item', item: any) => {
+    setDeleteItemType(type)
+    setItemToDelete(item)
+    setDeleteImpact(null)
+    setCanForceDelete(false)
+
+    // For items, use the simple existing logic
+    if (type === 'item') {
+      setDeleteDialogOpen(true)
+      return
+    }
+
+    // For hierarchy levels, check impact first
+    try {
+      let endpoint = ''
+      switch (type) {
+        case 'division':
+          endpoint = `/api/admin/library/divisions?id=${item.id}`
+          break
+        case 'section':
+          endpoint = `/api/admin/library/sections?id=${item.id}`
+          break
+        case 'assembly':
+          endpoint = `/api/admin/library/assemblies?id=${item.id}`
+          break
+      }
+
+      const response = await fetch(endpoint, { method: 'DELETE' })
+      const result = await response.json()
+
+      if (response.status === 409 || response.status === 400) {
+        // Has impact or protected items
+        setDeleteImpact(result.impact)
+        setCanForceDelete(result.canForceDelete || false)
+        setDeleteDialogOpen(true)
+      } else if (response.ok) {
+        // No impact, deletion successful
+        await fetchDivisions(true)
+      } else {
+        alert(`Failed to delete ${type}: ${result.error}`)
+      }
+    } catch (error) {
+      console.error(`Failed to delete ${type}:`, error)
+      alert(`Failed to delete ${type}`)
+    }
+  }
+
+  const handleDeleteConfirm = async (force = false) => {
+    if (!itemToDelete) return
+
+    setIsDeleting(true)
+    try {
+      let endpoint = ''
+      let url = ''
+
+      switch (deleteItemType) {
+        case 'division':
+          url = `/api/admin/library/divisions?id=${itemToDelete.id}`
+          if (force) url += '&force=true'
+          break
+        case 'section':
+          url = `/api/admin/library/sections?id=${itemToDelete.id}`
+          if (force) url += '&force=true'
+          break
+        case 'assembly':
+          url = `/api/admin/library/assemblies?id=${itemToDelete.id}`
+          if (force) url += '&force=true'
+          break
+        case 'item':
+          url = `/api/admin/library/items/${itemToDelete.id}`
+          break
+      }
+
+      const response = await fetch(url, { method: 'DELETE' })
+
+      if (response.ok) {
+        await fetchDivisions(true) // Refresh the data
+        setDeleteDialogOpen(false)
+        setItemToDelete(null)
+        setDeleteImpact(null)
+        setCanForceDelete(false)
+      } else {
+        const error = await response.json()
+        alert(`Failed to delete ${deleteItemType}: ${error.error}`)
+      }
+    } catch (error) {
+      console.error(`Failed to delete ${deleteItemType}:`, error)
+      alert(`Failed to delete ${deleteItemType}`)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleAddItem = (level: number, id: string, code: string, name: string) => {
+    console.log(`[Browser] Adding item to level ${level}, parent: ${code} - ${name}`)
+    setAddParentLevel(level)
+    setAddParentId(id)
+    setAddParentCode(code)
+    setAddParentName(name)
+    setAddDialogOpen(true)
+  }
+
+  const handleAddSuccess = () => {
+    fetchDivisions(true) // Refresh the data
   }
 
   // Flatten hierarchy for table display
@@ -293,92 +439,104 @@ export function ModernLibraryBrowser({
           setSelectedItem(null)
           fetchDivisions(true)
         }}
+        onItemUpdate={() => fetchDivisions(true)}
       />
     )
   }
 
   return (
-    <div className="space-y-4">
-      {/* Minimalistic Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Construction Library</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage and organize your construction items
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={collapseAll}>
-            <span className="hidden sm:inline">Collapse All</span>
-            <span className="sm:hidden">Collapse</span>
+    <div className="flex flex-col h-full space-y-2">
+      {/* Compact Header Bar */}
+      <div className="flex items-center justify-between gap-4 px-1">
+        <h1 className="text-base font-medium">Construction Library</h1>
+        <div className="flex items-center gap-1">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 px-2 text-xs" 
+            onClick={() => setExcelDialogOpen(true)}
+          >
+            <FileSpreadsheet className="w-3 h-3 mr-1" />
+            Import/Export
           </Button>
-          <Button variant="outline" size="sm" onClick={expandAll}>
-            <span className="hidden sm:inline">Expand All</span>
-            <span className="sm:hidden">Expand</span>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 px-2 text-xs" 
+            onClick={() => handleAddItem(0, '', '', 'Root')}
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add Division
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={collapseAll}>
+            Collapse
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={expandAll}>
+            Expand
           </Button>
         </div>
       </div>
 
-      {/* Streamlined Search and Controls */}
+      {/* Compact Search and Controls */}
       {showFilters && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 py-3 border-b">
-          <div className="relative flex-1 max-w-full sm:max-w-sm">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="flex items-center gap-2 px-1">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
-              placeholder="Search items, codes, or descriptions..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
+              className="h-8 pl-7 text-sm"
             />
           </div>
           
-          <div className="flex items-center gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="All Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="complete">Complete</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
-                <SelectItem value="actual">Production</SelectItem>
-              </SelectContent>
-            </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[110px] h-8 text-sm">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="complete">Complete</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="actual">Production</SelectItem>
+            </SelectContent>
+          </Select>
 
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => fetchDivisions(true)}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-            </Button>
-          </div>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={() => fetchDivisions(true)}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3 h-3" />
+            )}
+          </Button>
         </div>
       )}
 
-      {/* Modern Table */}
-      <Card>
-        <div className="overflow-x-auto">
+      {/* Maximized Table */}
+      <div className="flex-1 border rounded-lg overflow-hidden">
+        <div className="h-full overflow-auto">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[200px] sm:w-[40%]">Code / Name</TableHead>
-                <TableHead className="hidden sm:table-cell sm:w-[30%]">Description</TableHead>
-                <TableHead className="text-center min-w-[100px] sm:w-[15%]">Progress</TableHead>
-                <TableHead className="text-center min-w-[80px] sm:w-[8%]">Status</TableHead>
-                <TableHead className="text-center min-w-[80px] sm:w-[7%]">Factors</TableHead>
+            <TableHeader className="sticky top-0 bg-background z-10">
+              <TableRow className="h-9">
+                <TableHead className="min-w-[200px] sm:w-[35%] py-2">Code / Name</TableHead>
+                <TableHead className="hidden sm:table-cell sm:w-[25%] py-2">Description</TableHead>
+                <TableHead className="text-center min-w-[100px] sm:w-[15%] py-2">Progress</TableHead>
+                <TableHead className="text-center min-w-[80px] sm:w-[8%] py-2">Status</TableHead>
+                <TableHead className="text-center min-w-[80px] sm:w-[10%] py-2">Factors</TableHead>
+                <TableHead className="text-center min-w-[80px] sm:w-[7%] py-2">Actions</TableHead>
               </TableRow>
             </TableHeader>
           <TableBody>
             {flattenedItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   {searchTerm || statusFilter !== 'all' 
                     ? 'No items match the current filters' 
                     : 'No library data available'}
@@ -388,7 +546,7 @@ export function ModernLibraryBrowser({
               flattenedItems.map((item) => (
                 <TableRow 
                   key={item.id}
-                  className={`group transition-colors
+                  className={`group transition-colors h-10
                     ${item.type === 'item' ? 'cursor-pointer hover:bg-accent/50' : ''}
                     ${item.type === 'division' ? 'bg-accent/50 font-medium' : ''}
                     ${item.type === 'section' ? 'bg-accent/25' : ''}
@@ -397,7 +555,7 @@ export function ModernLibraryBrowser({
                   onClick={() => item.type === 'item' && item.item && handleItemSelect(item.item)}
                 >
                   {/* Code / Name Column */}
-                  <TableCell>
+                  <TableCell className="py-1">
                     <div className="flex items-center gap-2" style={{ paddingLeft: `${item.level * 20}px` }}>
                       {item.hasChildren && (
                         <Button
@@ -433,19 +591,19 @@ export function ModernLibraryBrowser({
                   </TableCell>
 
                   {/* Description Column */}
-                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground py-1">
                     {item.description}
                   </TableCell>
 
                   {/* Progress Column */}
-                  <TableCell>
+                  <TableCell className="py-1">
                     {item.totalItems !== undefined && item.totalItems > 0 ? (
                       <div className="flex items-center gap-2">
                         <Progress 
                           value={(item.confirmedItems || 0) / item.totalItems * 100} 
-                          className="flex-1 h-2" 
+                          className="flex-1 h-1.5" 
                         />
-                        <span className="text-xs text-muted-foreground min-w-[50px] text-right">
+                        <span className="text-xs text-muted-foreground min-w-[40px] text-right">
                           {item.confirmedItems}/{item.totalItems}
                         </span>
                       </div>
@@ -459,7 +617,7 @@ export function ModernLibraryBrowser({
                   </TableCell>
 
                   {/* Status Column */}
-                  <TableCell className="text-center">
+                  <TableCell className="text-center py-1">
                     {item.status ? (
                       getStatusBadge(item.status)
                     ) : (
@@ -468,7 +626,7 @@ export function ModernLibraryBrowser({
                   </TableCell>
 
                   {/* Factors Column */}
-                  <TableCell>
+                  <TableCell className="py-1">
                     {item.type === 'item' ? (
                       <div className="flex items-center justify-center gap-1">
                         <Badge variant="outline" className="text-xs h-6 transition-colors hover:bg-accent">
@@ -483,31 +641,188 @@ export function ModernLibraryBrowser({
                           <Wrench className="w-3 h-3 mr-1" />
                           {item.equipment?.length || 0}
                         </Badge>
-                        {item.type === 'item' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              item.item && handleItemSelect(item.item)
-                            }}
-                          >
-                            <Edit className="w-3 h-3" />
-                          </Button>
-                        )}
                       </div>
                     ) : (
                       <div className="text-center text-muted-foreground">-</div>
                     )}
                   </TableCell>
+
+                  {/* Actions Column */}
+                  <TableCell className="py-1">
+                    <TooltipProvider>
+                      <div className="flex items-center justify-center gap-1">
+                        {/* Add Button with Dropdown for hierarchy levels */}
+                        {(item.type === 'division' || item.type === 'section' || item.type === 'assembly') && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-green-600 hover:text-green-700"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {item.type === 'division' && (
+                                <>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleAddItem(1, item.id, item.code, item.name)}
+                                  >
+                                    <Plus className="w-3 h-3 mr-2" />
+                                    Add Section
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {item.type === 'section' && (
+                                <>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleAddItem(2, item.id, item.code, item.name)}
+                                  >
+                                    <Plus className="w-3 h-3 mr-2" />
+                                    Add Assembly
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {item.type === 'assembly' && (
+                                <>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleAddItem(3, item.id, item.code, item.name)}
+                                  >
+                                    <Plus className="w-3 h-3 mr-2" />
+                                    Add Item
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+
+                        {/* Delete Button for hierarchy levels */}
+                        {(item.type === 'division' || item.type === 'section' || item.type === 'assembly') && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteClick(item.type, item)
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Delete {item.type}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                        {/* Edit Button for items */}
+                        {item.type === 'item' && item.item && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleItemSelect(item.item!)
+                                }}
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Edit item</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                        {/* Delete Button for items */}
+                        {item.type === 'item' && item.item && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteClick('item', item.item!)
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Delete item</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                        {/* Show dash for empty state */}
+                        {item.type !== 'item' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span className="text-xs text-muted-foreground">+</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Add child {item.type === 'division' ? 'section' : item.type === 'section' ? 'assembly' : 'item'}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TooltipProvider>
+                  </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
-        </Table>
+          </Table>
         </div>
-      </Card>
+      </div>
+
+      {/* Enhanced Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        isOpen={deleteDialogOpen}
+        onClose={() => {
+          setDeleteDialogOpen(false)
+          setItemToDelete(null)
+          setDeleteImpact(null)
+          setCanForceDelete(false)
+        }}
+        onConfirm={handleDeleteConfirm}
+        itemType={deleteItemType}
+        itemData={itemToDelete || { id: '', code: '', name: '' }}
+        impact={deleteImpact}
+        canForceDelete={canForceDelete}
+        isDeleting={isDeleting}
+      />
+
+      {/* Add Item Dialog */}
+      <AddLibraryItemDialog
+        isOpen={addDialogOpen}
+        onClose={() => setAddDialogOpen(false)}
+        onSuccess={handleAddSuccess}
+        parentLevel={addParentLevel}
+        parentId={addParentId}
+        parentCode={addParentCode}
+        parentName={addParentName}
+      />
+
+      {/* Excel Import/Export Dialog */}
+      <ExcelImportExportInterface
+        isOpen={excelDialogOpen}
+        onClose={() => setExcelDialogOpen(false)}
+        onImportSuccess={handleAddSuccess}
+      />
     </div>
   )
 }
