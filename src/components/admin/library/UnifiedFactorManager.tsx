@@ -52,7 +52,6 @@ import {
   getFactorTypeBadgeClass,
   getFactorTypeRowClass
 } from '@/types/library'
-import { AddFactorModal } from './AddFactorModal'
 
 interface UnifiedFactorManagerProps {
   item: LibraryItem
@@ -68,8 +67,18 @@ export function UnifiedFactorManager({
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<FactorType | 'all'>('all')
   const [selectedFactors, setSelectedFactors] = useState<Set<string>>(new Set())
-  const [showAddModal, setShowAddModal] = useState(false)
+  const [showInlineForm, setShowInlineForm] = useState(false)
   const [loading, setLoading] = useState(false)
+  
+  // Inline form state
+  const [formType, setFormType] = useState<FactorType>('material')
+  const [formQuantity, setFormQuantity] = useState('1.0')
+  const [formWastage, setFormWastage] = useState('0')
+  const [formSaving, setFormSaving] = useState(false)
+  const [catalogueItems, setCatalogueItems] = useState<any[]>([])
+  const [catalogueLoading, setCatalogueLoading] = useState(false)
+  const [selectedCatalogueItem, setSelectedCatalogueItem] = useState<any>(null)
+  const [catalogueSearch, setCatalogueSearch] = useState('')
 
   // Convert all factors to unified format
   const unifiedFactors = useMemo(() => {
@@ -121,6 +130,86 @@ export function UnifiedFactorManager({
       newSelected.delete(factorId)
     }
     setSelectedFactors(newSelected)
+  }
+
+  // Load catalogue items when type changes
+  useEffect(() => {
+    if (showInlineForm && formType) {
+      loadCatalogueItems(formType)
+    }
+  }, [showInlineForm, formType])
+
+  const loadCatalogueItems = async (type: FactorType) => {
+    setCatalogueLoading(true)
+    try {
+      const endpoint = `/api/admin/library/catalogues/${type === 'material' ? 'materials' : type}`
+      const response = await fetch(endpoint)
+      
+      if (response.ok) {
+        const data = await response.json()
+        setCatalogueItems(data.data || [])
+      } else {
+        console.error(`Failed to load ${type} catalogue`)
+        setCatalogueItems([])
+      }
+    } catch (error) {
+      console.error(`Error loading ${type} catalogue:`, error)
+      setCatalogueItems([])
+    } finally {
+      setCatalogueLoading(false)
+    }
+  }
+
+  // Reset inline form
+  const resetInlineForm = () => {
+    setFormType('material')
+    setFormQuantity('1.0')
+    setFormWastage('0')
+    setFormSaving(false)
+    setCatalogueItems([])
+    setSelectedCatalogueItem(null)
+    setCatalogueSearch('')
+  }
+
+  // Handle inline form save
+  const handleInlineFormSave = async () => {
+    if (!selectedCatalogueItem || !formQuantity) {
+      alert('Please select a catalogue item and enter quantity/hours')
+      return
+    }
+
+    setFormSaving(true)
+    try {
+      let submitData: any = {}
+
+      if (formType === 'material') {
+        submitData = {
+          quantityPerUnit: parseFloat(formQuantity),
+          wastagePercentage: parseFloat(formWastage)
+        }
+      } else if (formType === 'labor' || formType === 'equipment') {
+        submitData = {
+          hoursPerUnit: parseFloat(formQuantity)
+        }
+      }
+
+      await handleAddFactor(formType, selectedCatalogueItem.id, submitData)
+      
+      // Reset and hide form
+      resetInlineForm()
+      setShowInlineForm(false)
+    } catch (error) {
+      console.error('Failed to save inline factor:', error)
+      alert('Failed to save factor. Please try again.')
+    } finally {
+      setFormSaving(false)
+    }
+  }
+
+  // Handle inline form cancel
+  const handleInlineFormCancel = () => {
+    resetInlineForm()
+    setShowInlineForm(false)
   }
 
   const handleAddFactor = async (type: FactorType, catalogueId: string, data: any) => {
@@ -327,9 +416,18 @@ export function UnifiedFactorManager({
                 Delete {selectedCount}
               </Button>
             )}
-            <Button onClick={() => setShowAddModal(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Factor
+            <Button onClick={() => showInlineForm ? handleInlineFormCancel() : setShowInlineForm(true)}>
+              {showInlineForm ? (
+                <>
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Factor
+                </>
+              )}
             </Button>
           </div>
         )}
@@ -385,6 +483,116 @@ export function UnifiedFactorManager({
               </TableRow>
             </TableHeader>
             <TableBody>
+              {/* Inline Add Form Row */}
+              {showInlineForm && !readonly && (
+                <TableRow className="bg-gray-50 border-b-2">
+                  <TableCell></TableCell>
+                  <TableCell>
+                    <Select value={formType} onValueChange={(value: FactorType) => {
+                      setFormType(value)
+                      setSelectedCatalogueItem(null)
+                      setCatalogueSearch('')
+                    }}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="material">🔨 Material</SelectItem>
+                        <SelectItem value="labor">👥 Labor</SelectItem>
+                        <SelectItem value="equipment">🚛 Equipment</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell colSpan={2}>
+                    <div className="space-y-1">
+                      <Input 
+                        placeholder="Search catalogue items..."
+                        value={catalogueSearch}
+                        onChange={(e) => setCatalogueSearch(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      {catalogueItems.length > 0 && (
+                        <Select 
+                          value={selectedCatalogueItem?.id || ''} 
+                          onValueChange={(value) => {
+                            const item = catalogueItems.find(i => i.id === value)
+                            setSelectedCatalogueItem(item || null)
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder={catalogueLoading ? "Loading..." : "Select item"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {catalogueItems
+                              .filter(item => 
+                                item.name.toLowerCase().includes(catalogueSearch.toLowerCase()) ||
+                                item.code.toLowerCase().includes(catalogueSearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map((item) => (
+                                <SelectItem key={item.id} value={item.id}>
+                                  {item.code} - {item.name}
+                                </SelectItem>
+                              ))
+                            }
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Input 
+                      placeholder={formType === 'material' ? 'Quantity' : 'Hours'}
+                      value={formQuantity}
+                      onChange={(e) => setFormQuantity(e.target.value)}
+                      type="number"
+                      step="0.01"
+                      className="h-8 text-xs"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {formType === 'material' ? (
+                      <Input 
+                        placeholder="Wastage %"
+                        value={formWastage}
+                        onChange={(e) => setFormWastage(e.target.value)}
+                        type="number"
+                        step="0.01"
+                        className="h-8 text-xs"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedCatalogueItem ? `$${(selectedCatalogueItem.rate || 0).toFixed(2)}` : '-'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button 
+                        size="sm" 
+                        className="h-7 px-2 text-xs"
+                        onClick={handleInlineFormSave}
+                        disabled={formSaving}
+                      >
+                        <Check className="w-3 h-3" />
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={handleInlineFormCancel}
+                        disabled={formSaving}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+
               {filteredFactors.length === 0 ? (
                 <TableRow>
                   <TableCell 
@@ -455,13 +663,6 @@ export function UnifiedFactorManager({
         </div>
       </Card>
 
-      {/* Add Factor Modal */}
-      <AddFactorModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onAdd={handleAddFactor}
-        itemId={item.id}
-      />
     </div>
   )
 }
