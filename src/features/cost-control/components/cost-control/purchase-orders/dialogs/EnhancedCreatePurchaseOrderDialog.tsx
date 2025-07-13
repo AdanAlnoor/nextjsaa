@@ -1,0 +1,816 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import { Textarea } from '@/shared/components/ui/textarea'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select'
+import { Loader2, Plus, Trash, AlertTriangle, CheckCircle, DollarSign } from 'lucide-react'
+import { usePurchaseOrderActions } from '../hooks/usePurchaseOrderActions'
+import { createClient } from '@/shared/lib/supabase/client'
+import { Database } from '@/shared/types/supabase'
+import { useToast } from '@/shared/components/ui/use-toast'
+import { formatCurrency } from '@/shared/lib/utils'
+import { Alert, AlertDescription } from '@/shared/components/ui/alert'
+import { Badge } from '@/shared/components/ui/badge'
+import { CostControlSelector } from '../CostControlSelector'
+
+type Supplier = Database['public']['Tables']['suppliers']['Row']
+type CostControlItem = {
+  id: string
+  name: string
+  bo_amount: number
+  paid_bills: number
+  pending_bills: number
+  available_budget?: number
+  budget_utilization_percent?: number
+  budget_status?: string
+  level?: number
+  parent_id?: string | null
+  is_parent?: boolean
+}
+
+interface PurchaseOrderItem {
+  description: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  amount: number;
+  internal_note: string;
+  cost_control_item_id?: string;
+  budget_validation_override?: boolean;
+  override_reason?: string;
+  [key: string]: string | number | boolean | undefined;
+}
+
+interface POItem {
+  description: string
+  quantity: number
+  unit: string
+  price: number
+  amount: number
+  internal_note?: string
+  cost_control_item_id?: string
+  budget_validation_override?: boolean
+  override_reason?: string
+}
+
+interface POFormData {
+  po_number: string
+  name: string
+  supplier: string
+  description?: string
+  total: number
+  status: 'Draft' | 'Pending' | 'Approved' | 'Rejected'
+  items: POItem[]
+}
+
+interface POInitialData {
+  po_number?: string
+  name?: string
+  supplier?: string
+  description?: string
+  total?: number
+  status?: 'Draft' | 'Pending' | 'Approved' | 'Rejected'
+  items?: Partial<POItem>[]
+}
+
+interface BudgetValidationResult {
+  is_valid: boolean
+  validation_mode: string
+  available_budget: number
+  required_amount: number
+  deficit_amount: number
+  utilization_percent: number
+  alert_level: string
+  validation_message: string
+  can_override: boolean
+  requires_approval: boolean
+}
+
+interface EnhancedCreatePurchaseOrderDialogProps {
+  projectId: string
+  isOpen: boolean
+  onClose: () => void
+  onSuccess: () => void
+  initialData?: POInitialData
+}
+
+const UNITS = [
+  'Pieces',
+  'Meters',
+  'Square Meters',
+  'Cubic Meters',
+  'Kilograms',
+  'Tonnes',
+  'Hours',
+  'Days',
+  'Lots'
+]
+
+export function EnhancedCreatePurchaseOrderDialog({
+  projectId,
+  isOpen,
+  onClose,
+  onSuccess,
+  initialData
+}: EnhancedCreatePurchaseOrderDialogProps) {
+  const { toast } = useToast()
+  const supabase = createClient()
+  const { createPurchaseOrder, isLoading } = usePurchaseOrderActions(projectId)
+  
+  const [formData, setFormData] = useState<POFormData>({
+    po_number: '',
+    name: '',
+    supplier: '',
+    description: '',
+    total: 0,
+    status: 'Draft',
+    items: [
+      {
+        description: '',
+        quantity: 1,
+        unit: 'unit',
+        price: 0,
+        amount: 0,
+        internal_note: '',
+        cost_control_item_id: undefined,
+        budget_validation_override: false,
+        override_reason: ''
+      }
+    ]
+  })
+  
+  // State for budget control features
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [costControlItems, setCostControlItems] = useState<CostControlItem[]>([])
+  const [budgetValidations, setBudgetValidations] = useState<Record<number, BudgetValidationResult>>({})
+  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false)
+  const [isLoadingCostControl, setIsLoadingCostControl] = useState(false)
+  const [showCostControlSelector, setShowCostControlSelector] = useState<number | null>(null)
+  
+  // Initialize with initialData if provided
+  useEffect(() => {
+    if (initialData && isOpen) {
+      setFormData(prev => ({
+        po_number: initialData.po_number || prev.po_number,
+        name: initialData.name || prev.name,
+        supplier: initialData.supplier || prev.supplier,
+        description: initialData.description || prev.description,
+        total: initialData.total || prev.total,
+        status: initialData.status || prev.status,
+        items: initialData.items && initialData.items.length > 0
+          ? initialData.items.map(item => ({
+              description: item.description || '',
+              quantity: item.quantity || 1,
+              unit: item.unit || 'unit',
+              price: item.price || 0,
+              amount: item.amount || 0,
+              internal_note: item.internal_note || '',
+              cost_control_item_id: item.cost_control_item_id,
+              budget_validation_override: item.budget_validation_override || false,
+              override_reason: item.override_reason || ''
+            }))
+          : prev.items
+      }))
+    }
+  }, [initialData, isOpen])
+  
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!isOpen) {
+      setFormData({
+        po_number: '',
+        name: '',
+        supplier: '',
+        description: '',
+        total: 0,
+        status: 'Draft',
+        items: [
+          {
+            description: '',
+            quantity: 1,
+            unit: 'unit',
+            price: 0,
+            amount: 0,
+            internal_note: '',
+            cost_control_item_id: undefined,
+            budget_validation_override: false,
+            override_reason: ''
+          }
+        ]
+      })
+      setBudgetValidations({})
+    }
+  }, [isOpen])
+  
+  // Fetch suppliers
+  useEffect(() => {
+    const fetchSuppliers = async () => {
+      setIsLoadingSuppliers(true)
+      try {
+        const { data, error } = await supabase
+          .from('suppliers')
+          .select('*')
+        
+        if (error) throw error
+        
+        setSuppliers(data || [])
+      } catch (error) {
+        console.error('Error fetching suppliers:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load suppliers',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsLoadingSuppliers(false)
+      }
+    }
+    
+    if (isOpen) {
+      fetchSuppliers()
+    }
+  }, [isOpen, supabase, toast])
+
+  // Fetch cost control items with budget data
+  useEffect(() => {
+    const fetchCostControlItems = async () => {
+      setIsLoadingCostControl(true)
+      try {
+        // First get the budget view data
+        const { data: budgetData, error: budgetError } = await supabase
+          .from('cost_control_budget_view')
+          .select('*')
+          .eq('project_id', projectId)
+        
+        if (budgetError) throw budgetError
+        
+        // Then get the hierarchy data from cost_control_items
+        const { data: hierarchyData, error: hierarchyError } = await supabase
+          .from('cost_control_items')
+          .select('id, name, level, parent_id, is_parent')
+          .eq('project_id', projectId)
+          .order('order_index')
+        
+        if (hierarchyError) throw hierarchyError
+        
+        // Merge the data
+        const mergedData = budgetData?.map(item => {
+          const hierarchy = hierarchyData?.find(h => h.id === item.id)
+          return {
+            ...item,
+            name: hierarchy?.name || item.description,
+            level: hierarchy?.level || 0,
+            parent_id: hierarchy?.parent_id,
+            is_parent: hierarchy?.is_parent || false
+          }
+        }) || []
+        
+        // Build hierarchy tree and flatten it for proper display
+        const buildHierarchicalOrder = (items: typeof mergedData) => {
+          const rootItems = items.filter(item => !item.parent_id)
+          const result: typeof mergedData = []
+          
+          const addItemAndChildren = (item: typeof mergedData[0]) => {
+            result.push(item)
+            // Find and add children
+            const children = items.filter(child => child.parent_id === item.id)
+            children.sort((a, b) => a.name.localeCompare(b.name))
+            children.forEach(child => addItemAndChildren(child))
+          }
+          
+          // Sort root items by name
+          rootItems.sort((a, b) => a.name.localeCompare(b.name))
+          rootItems.forEach(item => addItemAndChildren(item))
+          
+          return result
+        }
+        
+        const hierarchicalData = buildHierarchicalOrder(mergedData)
+        setCostControlItems(hierarchicalData)
+      } catch (error) {
+        console.error('Error fetching cost control items:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load cost control items',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsLoadingCostControl(false)
+      }
+    }
+    
+    if (isOpen) {
+      fetchCostControlItems()
+    }
+  }, [isOpen, projectId, supabase, toast])
+  
+  // Validate budget when item changes
+  const validateBudget = async (itemIndex: number, costControlItemId: string, amount: number) => {
+    if (!costControlItemId || costControlItemId === 'no_tracking' || costControlItemId === 'loading' || amount <= 0) {
+      setBudgetValidations(prev => {
+        const updated = { ...prev }
+        delete updated[itemIndex]
+        return updated
+      })
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .rpc('validate_po_budget_enhanced', {
+          p_cost_control_item_id: costControlItemId,
+          p_amount: amount,
+          p_allow_override: formData.items[itemIndex].budget_validation_override || false,
+          p_project_id: projectId
+        })
+      
+      if (error) throw error
+      
+      if (data && data.length > 0) {
+        setBudgetValidations(prev => ({
+          ...prev,
+          [itemIndex]: data[0]
+        }))
+      }
+    } catch (error) {
+      console.error('Error validating budget:', error)
+    }
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }))
+  }
+  
+  const handleStatusChange = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      status: value as 'Draft' | 'Pending' | 'Approved' | 'Rejected'
+    }))
+  }
+  
+  const handleItemChange = (index: number, field: keyof POItem, value: string | number | boolean) => {
+    setFormData(prev => {
+      const newItems = [...prev.items]
+      newItems[index] = {
+        ...newItems[index],
+        [field]: value
+      }
+      
+      // Recalculate amount if quantity or price changes
+      if (field === 'quantity' || field === 'price') {
+        const qty = field === 'quantity' ? Number(value) : newItems[index].quantity
+        const price = field === 'price' ? Number(value) : newItems[index].price
+        newItems[index].amount = Number((qty * price).toFixed(2))
+      }
+      
+      // Calculate total from items
+      const total = newItems.reduce((sum, item) => sum + item.amount, 0)
+      
+      return {
+        ...prev,
+        items: newItems,
+        total
+      }
+    })
+
+    // Validate budget if relevant fields changed
+    if (field === 'cost_control_item_id' || field === 'quantity' || field === 'price' || field === 'budget_validation_override') {
+      const item = formData.items[index]
+      const costControlItemId = field === 'cost_control_item_id' ? value as string : item.cost_control_item_id
+      const amount = field === 'quantity' || field === 'price' 
+        ? Number((
+            (field === 'quantity' ? Number(value) : item.quantity) * 
+            (field === 'price' ? Number(value) : item.price)
+          ).toFixed(2))
+        : item.amount
+
+      if (costControlItemId && costControlItemId !== 'no_tracking' && costControlItemId !== 'loading') {
+        validateBudget(index, costControlItemId, amount)
+      }
+    }
+  }
+  
+  const addItem = () => {
+    setFormData(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          description: '',
+          quantity: 1,
+          unit: 'unit',
+          price: 0,
+          amount: 0,
+          internal_note: '',
+          cost_control_item_id: undefined,
+          budget_validation_override: false,
+          override_reason: ''
+        }
+      ]
+    }))
+  }
+  
+  const removeItem = (index: number) => {
+    setFormData(prev => {
+      const newItems = prev.items.filter((_, i) => i !== index)
+      const total = newItems.reduce((sum, item) => sum + item.amount, 0)
+      
+      // Remove budget validation for this item
+      setBudgetValidations(prevValidations => {
+        const updated = { ...prevValidations }
+        delete updated[index]
+        // Reindex remaining validations
+        const reindexed: Record<number, BudgetValidationResult> = {}
+        Object.entries(updated).forEach(([key, validation]) => {
+          const oldIndex = parseInt(key)
+          if (oldIndex > index) {
+            reindexed[oldIndex - 1] = validation
+          } else if (oldIndex < index) {
+            reindexed[oldIndex] = validation
+          }
+        })
+        return reindexed
+      })
+      
+      return {
+        ...prev,
+        items: newItems,
+        total
+      }
+    })
+  }
+
+  const getBudgetStatusBadge = (validation: BudgetValidationResult) => {
+    if (validation.alert_level === 'CRITICAL') {
+      return <Badge variant="destructive">Budget Exceeded</Badge>
+    } else if (validation.alert_level === 'WARNING') {
+      return <Badge variant="secondary">Budget Warning</Badge>
+    } else if (validation.alert_level === 'CAUTION') {
+      return <Badge variant="outline">Budget Caution</Badge>
+    } else {
+      return <Badge variant="default">Budget OK</Badge>
+    }
+  }
+
+  // Helper function to get indentation for cascading display
+  const getIndentation = (level: number) => {
+    return `${level * 16}px`
+  }
+
+  // Helper function to get hierarchy label prefix
+  const getHierarchyPrefix = (level: number) => {
+    switch(level) {
+      case 0: return 'Structure: '
+      case 1: return 'Element: '
+      case 2: return 'Item: '
+      default: return ''
+    }
+  }
+  
+  const handleSubmit = async () => {
+    // Add cost control item IDs to the form data
+    const enhancedFormData = {
+      ...formData,
+      items: formData.items.map(item => ({
+        ...item,
+        // Only include cost_control_item_id if one is selected (exclude special values)
+        cost_control_item_id: (item.cost_control_item_id && 
+                               item.cost_control_item_id !== 'no_tracking' && 
+                               item.cost_control_item_id !== 'loading') 
+                               ? item.cost_control_item_id : undefined
+      }))
+    }
+
+    const result = await createPurchaseOrder(enhancedFormData)
+    if (result.success) {
+      onSuccess()
+      onClose()
+    }
+  }
+  
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        onClose()
+      }
+    }}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Create Purchase Order with Budget Control</DialogTitle>
+          <DialogDescription>
+            Enter the details for the new purchase order. Link items to cost control for budget validation.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="grid gap-6 py-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="po_number">PO Number</Label>
+              <Input
+                id="po_number"
+                name="po_number"
+                value={formData.po_number}
+                onChange={handleInputChange}
+                placeholder="PO-001"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="supplier">Supplier</Label>
+              <Input
+                id="supplier"
+                name="supplier"
+                value={formData.supplier}
+                onChange={handleInputChange}
+                placeholder="Supplier name"
+              />
+            </div>
+          </div>
+          
+          <div className="grid gap-2">
+            <Label htmlFor="name">Purchase Order Name</Label>
+            <Input
+              id="name"
+              name="name"
+              value={formData.name}
+              onChange={handleInputChange}
+              placeholder="Brief name for the purchase order"
+            />
+          </div>
+          
+          <div className="grid gap-2">
+            <Label htmlFor="description">Description (Optional)</Label>
+            <Textarea
+              id="description"
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              placeholder="Description of the purchase order"
+              className="min-h-[80px]"
+            />
+          </div>
+          
+          <div className="grid gap-2">
+            <Label htmlFor="status">Status</Label>
+            <Select value={formData.status} onValueChange={handleStatusChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Draft">Draft</SelectItem>
+                <SelectItem value="Pending">Submit for Approval</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <Label>Items with Budget Control</Label>
+              <Button type="button" size="sm" variant="outline" onClick={addItem}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Item
+              </Button>
+            </div>
+            
+            {formData.items.map((item, index) => {
+              const validation = budgetValidations[index]
+              const selectedCostControl = costControlItems.find(cc => cc.id === item.cost_control_item_id)
+              
+              return (
+                <div key={index} className="p-4 border rounded-md space-y-4">
+                  <div className="grid gap-4">
+                    <div className="grid gap-2">
+                      <Label>Description</Label>
+                      <Input
+                        value={item.description}
+                        onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                        placeholder="Item description"
+                      />
+                    </div>
+                    
+                    {/* Cost Control Item Selection */}
+                    <div className="grid gap-2">
+                      <Label>Cost Control Item (Budget Tracking)</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-start h-auto min-h-[40px] p-3"
+                        onClick={() => setShowCostControlSelector(index)}
+                        disabled={isLoadingCostControl}
+                      >
+                        {isLoadingCostControl ? (
+                          <span className="text-muted-foreground">Loading cost control items...</span>
+                        ) : selectedCostControl ? (
+                          <div className="flex items-center gap-2 w-full">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {selectedCostControl.level === 0 ? 'Structure' : 
+                                 selectedCostControl.level === 1 ? 'Element' : 'Item'}
+                              </Badge>
+                              <span className="font-medium">{selectedCostControl.name}</span>
+                            </div>
+                            <div className="ml-auto text-sm text-muted-foreground">
+                              Available: {formatCurrency(selectedCostControl.available_budget || 0)}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">Select cost control item for budget tracking</span>
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Budget Status Display */}
+                    {selectedCostControl && (
+                      <div className="p-3 bg-muted rounded-md">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">Budget Status</span>
+                          {validation && getBudgetStatusBadge(validation)}
+                        </div>
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Available:</span>
+                            <p className="font-medium">{formatCurrency(selectedCostControl.available_budget || 0)}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Utilization:</span>
+                            <p className="font-medium">{(selectedCostControl.budget_utilization_percent || 0).toFixed(1)}%</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Item Amount:</span>
+                            <p className="font-medium">{formatCurrency(item.amount)}</p>
+                          </div>
+                        </div>
+                        {validation && validation.validation_message && (
+                          <p className="text-sm mt-2 text-muted-foreground">{validation.validation_message}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Budget Validation Alert */}
+                    {validation && !validation.is_valid && validation.validation_mode === 'STRICT' && (
+                      <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          {validation.validation_message}
+                          {validation.can_override && (
+                            <span className="block mt-2">You can enable budget override below.</span>
+                          )}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {/* Budget Override Section */}
+                    {validation && validation.can_override && validation.deficit_amount > 0 && (
+                      <div className="p-3 border border-orange-200 rounded-md bg-orange-50">
+                        <div className="flex items-center gap-2 mb-2">
+                          <input
+                            type="checkbox"
+                            id={`override-${index}`}
+                            checked={item.budget_validation_override || false}
+                            onChange={(e) => handleItemChange(index, 'budget_validation_override', e.target.checked)}
+                          />
+                          <Label htmlFor={`override-${index}`}>Enable Budget Override</Label>
+                        </div>
+                        {item.budget_validation_override && (
+                          <div className="grid gap-2">
+                            <Label>Override Reason (Required)</Label>
+                            <Input
+                              value={item.override_reason || ''}
+                              onChange={(e) => handleItemChange(index, 'override_reason', e.target.value)}
+                              placeholder="Explain why this budget override is necessary"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Quantity</Label>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(index, 'quantity', Number(e.target.value))}
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Unit</Label>
+                        <Input
+                          value={item.unit}
+                          onChange={(e) => handleItemChange(index, 'unit', e.target.value)}
+                          placeholder="units"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Price</Label>
+                        <Input
+                          type="number"
+                          value={item.price}
+                          onChange={(e) => handleItemChange(index, 'price', Number(e.target.value))}
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center">
+                      <div className="grid gap-2 flex-1">
+                        <Label>Internal Note (Optional)</Label>
+                        <Input
+                          value={item.internal_note || ''}
+                          onChange={(e) => handleItemChange(index, 'internal_note', e.target.value)}
+                          placeholder="Additional notes for this item"
+                        />
+                      </div>
+                      <div className="ml-4 flex flex-col items-end">
+                        <Label>Amount</Label>
+                        <p className="font-medium text-lg">{formatCurrency(item.amount)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {formData.items.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => removeItem(index)}
+                    >
+                      <Trash className="h-4 w-4 mr-1" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+            
+            <div className="flex justify-end mt-4">
+              <div className="text-right">
+                <Label>Total Amount</Label>
+                <p className="text-lg font-bold">{formatCurrency(formData.total)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              'Create Purchase Order'
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+      
+      {/* Cost Control Selector Modal */}
+      {showCostControlSelector !== null && (
+        <CostControlSelector
+          items={costControlItems}
+          selectedItemId={formData.items[showCostControlSelector]?.cost_control_item_id}
+          onSelect={(item) => {
+            if (showCostControlSelector !== null) {
+              handleItemChange(
+                showCostControlSelector, 
+                'cost_control_item_id', 
+                item ? item.id : 'no_tracking'
+              )
+            }
+          }}
+          isOpen={showCostControlSelector !== null}
+          onClose={() => setShowCostControlSelector(null)}
+        />
+      )}
+    </Dialog>
+  )
+}

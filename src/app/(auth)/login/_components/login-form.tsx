@@ -1,9 +1,9 @@
 "use client";
 
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
-import { InputForm } from "@/components/ui/input/input-form";
-import { createClient } from "@/utils/supabase/client";
+import { Button } from "@/shared/components/ui/button";
+import { Form } from "@/shared/components/ui/form";
+import { InputForm } from "@/shared/components/ui/input/input-form";
+import { createClient } from "@/shared/lib/supabase/client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -11,7 +11,7 @@ import toast from "react-hot-toast";
 import { z } from "zod";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/shared/components/ui/alert";
 import { Terminal } from "lucide-react";
 
 export const loginFormSchema = z.object({
@@ -32,6 +32,10 @@ const LoginForm = () => {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  
+  // Get redirect URL from query params
+  const searchParams = new URLSearchParams(window.location.search);
+  const redirectTo = searchParams.get('redirectTo') || '/projects';
 
   const form = useForm<LoginValuesType>({
     resolver: zodResolver(loginFormSchema),
@@ -89,13 +93,6 @@ const LoginForm = () => {
         expiresAt: data.session?.expires_at
       });
       
-      // Store the session ID in multiple places to ensure we keep it
-      try {
-        window.sessionStorage.setItem('supabase_auth_token', data.session.access_token);
-      } catch (e) {
-        console.error('Error storing session token in sessionStorage', e);
-      }
-      
       toast.success("Login successful! Redirecting...");
       
       // We need to avoid a common race condition where the redirect happens before the local storage is set
@@ -103,17 +100,16 @@ const LoginForm = () => {
         // Double-check we still have a session
         supabase.auth.getSession().then(({ data: { session } }) => {
           if (session) {
-            console.log('Session confirmed before redirect, going to projects');
-            // Force the browser to reload the page completely to ensure state is fresh
-            window.location.href = '/projects';
+            console.log('Session confirmed before redirect, going to:', redirectTo);
+            // Use router.push for better Next.js integration
+            router.push(redirectTo);
           } else {
-            console.error('Lost session before redirect! Using localStorage fallback');
-            // We lost our session, but we can manually restore it
+            console.error('Lost session before redirect!');
             toast.error("Session issue - please try again");
             setIsLoading(false);
           }
         });
-      }, 1000);
+      }, 500);
 
     } catch (err: any) {
       console.error("Login Process Error:", err);

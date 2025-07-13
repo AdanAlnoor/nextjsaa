@@ -1,10 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { createClient } from '@/shared/lib/supabase/client'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Alert, AlertDescription } from '@/shared/components/ui/alert'
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 
 export default function MigrationPage() {

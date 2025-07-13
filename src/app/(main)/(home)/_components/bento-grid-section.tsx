@@ -1,4 +1,4 @@
-import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
+import { BentoCard, BentoGrid } from "@/shared/components/ui/bento-grid";
 import { Code2, Component, LockKeyhole, Palette } from "lucide-react";
 
 const features = [

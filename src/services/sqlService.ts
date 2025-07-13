@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 import fs from 'fs'
 import path from 'path'
 

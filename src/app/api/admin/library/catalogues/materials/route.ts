@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
-import type { MaterialCatalogueItem, CatalogueSearchFilters } from '@/types/library'
+import { createClient } from '@/shared/lib/supabase/server'
+import type { MaterialCatalogueItem, CatalogueSearchFilters } from '@/library/types/library'
 
 export async function GET(request: NextRequest) {
   try {

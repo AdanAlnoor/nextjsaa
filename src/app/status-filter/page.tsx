@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import FilterLayout from '@/components/layouts/FilterLayout'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import FilterLayout from '@/shared/components/layouts/FilterLayout'
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { Input } from '@/shared/components/ui/input'
 import { Search } from 'lucide-react'
 
 const statuses = [

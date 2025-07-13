@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/shared/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Import code generator
-    const { LibraryCodeGenerator } = await import('@/lib/services/libraryCodeGenerator')
+    const { LibraryCodeGenerator } = await import('@/shared/lib/services/libraryCodeGenerator')
     const codeGenerator = new LibraryCodeGenerator()
 
     let previewCode = ''
@@ -37,16 +37,16 @@ export async function POST(request: NextRequest) {
     try {
       switch (level) {
         case 1: // Division
-          previewCode = await codeGenerator.generateDivisionCode()
+          previewCode = codeGenerator.generateDivisionCode('Preview', {}).code
           break
         case 2: // Section
-          previewCode = await codeGenerator.generateSectionCode(parentCode!)
+          previewCode = codeGenerator.generateSectionCode(parentCode!, 'Preview', {}).code
           break
         case 3: // Assembly
-          previewCode = await codeGenerator.generateAssemblyCode(parentCode!)
+          previewCode = codeGenerator.generateAssemblyCode(parentCode!, 'Preview', {}).code
           break
         case 4: // Item
-          previewCode = await codeGenerator.generateItemCode(parentCode!)
+          previewCode = codeGenerator.generateItemCode(parentCode!, 'Preview', {}).code
           break
       }
 

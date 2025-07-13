@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/shared/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/shared/components/ui/card"
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react"
 
 export default function InvitationPage({ params }: { params: { token: string } }) {
@@ -179,7 +179,7 @@ export default function InvitationPage({ params }: { params: { token: string } }
         <CardHeader>
           <CardTitle>Project Invitation</CardTitle>
           <CardDescription>
-            You've been invited to join a project
+            You&apos;ve been invited to join a project
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

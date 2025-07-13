@@ -1,9 +1,9 @@
 "use client"
 
 import { useState } from 'react'
-import FilterLayout from '@/components/layouts/FilterLayout'
-import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import FilterLayout from '@/shared/components/layouts/FilterLayout'
+import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import { 
   Table, 
   TableBody, 
@@ -11,7 +11,7 @@ import {
   TableHead, 
   TableHeader, 
   TableRow 
-} from '@/components/ui/table'
+} from '@/shared/components/ui/table'
 
 const items = [
   {

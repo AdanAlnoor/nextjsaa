@@ -1,10 +1,9 @@
 'use client'
 
-import { CostControlTab } from '@/components/cost-control/CostControlTab'
-import { Database } from '@/types/supabase'
-import { useCostControl } from '@/context/CostControlContext'
+import { CostControlTab } from '@/features/cost-control/components/cost-control/CostControlTab'
+import { Database } from '@/shared/types/supabase'
 import { useEffect, useState } from 'react'
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 
 type Project = Database['public']['Tables']['projects']['Row']
 

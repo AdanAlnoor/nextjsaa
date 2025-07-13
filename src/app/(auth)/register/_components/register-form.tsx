@@ -1,9 +1,9 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
-import { InputForm } from "@/components/ui/input/input-form";
-import { createClient } from "@/utils/supabase/client";
+import { Button } from "@/shared/components/ui/button";
+import { Form } from "@/shared/components/ui/form";
+import { InputForm } from "@/shared/components/ui/input/input-form";
+import { createClient } from "@/shared/lib/supabase/client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";

@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import FilterLayout from '@/components/layouts/FilterLayout'
+import { Button } from '@/shared/components/ui/button'
+import FilterLayout from '@/shared/components/layouts/FilterLayout'
 
 export default function StatusFilterError({
   error,

@@ -1,15 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/client'
-import { Database } from '@/types/supabase'
+import { createClient } from '@/shared/lib/supabase/client'
+import { Database } from '@/shared/types/supabase'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const pathname = usePathname()
   const supabase = createClient()
   
   useEffect(() => {
@@ -26,12 +27,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // Check if user has admin role
         const { data, error } = await supabase
           .from('user_role_assignments')
-          .select('user_roles(name)')
+          .select(`
+            user_roles!inner(name)
+          `)
           .eq('user_id', user.id)
           .eq('user_roles.name', 'admin')
-          .single()
+          .limit(1)
         
-        if (error || !data) {
+        if (error || !data || data.length === 0) {
           console.error('Access check error or not admin:', error)
           router.push('/')
           return
@@ -47,7 +50,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     
     checkAdminAccess()
-  }, [])
+  }, [router, supabase])
   
   if (loading) {
     return (
@@ -74,11 +77,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <h1 className="ml-4 text-xl font-bold border-l-2 pl-4 border-gray-200">Admin Panel</h1>
               </div>
               <div className="ml-6 flex space-x-8">
-                <Link href="/admin/users" className="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                <Link 
+                  href="/admin/users" 
+                  className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors cursor-pointer ${
+                    pathname === '/admin/users' 
+                      ? 'border-blue-500 text-blue-600 font-semibold' 
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
                   User Management
                 </Link>
-                <Link href="/admin/roles" className="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                <Link 
+                  href="/admin/roles" 
+                  className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors cursor-pointer ${
+                    pathname === '/admin/roles' 
+                      ? 'border-blue-500 text-blue-600 font-semibold' 
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
                   Role Management
+                </Link>
+                <Link 
+                  href="/admin/catalog" 
+                  className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors cursor-pointer ${
+                    pathname === '/admin/catalog' 
+                      ? 'border-blue-500 text-blue-600 font-semibold' 
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Catalog Management
+                </Link>
+                <Link 
+                  href="/admin/library" 
+                  className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors cursor-pointer ${
+                    pathname === '/admin/library' 
+                      ? 'border-blue-500 text-blue-600 font-semibold' 
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  🗄️ Library System
                 </Link>
               </div>
             </div>

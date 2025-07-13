@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/shared/lib/supabase/server'
 
 export class LibraryCodeGenerator {
   private supabase: ReturnType<typeof createClient>

@@ -1,6 +1,6 @@
-import { createClient } from '@/utils/supabase/client'
-import type { Database } from '@/types/supabase'
-import { CostControlData, CostControlItem, mapDbToCostControlData } from '@/types/supabase'
+import { createClient } from '@/shared/lib/supabase/client'
+import type { Database } from '@/shared/types/supabase'
+import { CostControlData, CostControlItem, mapDbToCostControlData } from '@/shared/types/supabase'
 
 // Initialize Supabase client
 const supabase = createClient()

@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client';
+import { createClient } from '@/shared/lib/supabase/client';
 
 /**
  * This script checks if purchase order migrations have been applied

@@ -2,9 +2,9 @@
 
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { createClient } from '@/utils/supabase/client';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/shared/components/ui/card';
+import { createClient } from '@/shared/lib/supabase/client';
 import { AlertTriangle, ArrowRight } from 'lucide-react';
 
 export default function PurchaseWorksPage() {
@@ -59,8 +59,8 @@ export default function PurchaseWorksPage() {
         </CardHeader>
         <CardContent>
           <p className="mb-4">
-            You'll be automatically redirected to a project's purchase orders page.
-            If you're not redirected, please select a project manually.
+            You&apos;ll be automatically redirected to a project&apos;s purchase orders page.
+            If you&apos;re not redirected, please select a project manually.
           </p>
         </CardContent>
         <CardFooter>

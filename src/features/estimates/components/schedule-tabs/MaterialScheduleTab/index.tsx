@@ -1,0 +1,1 @@
+export { MaterialScheduleTab } from './MaterialScheduleTab';

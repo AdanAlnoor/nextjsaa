@@ -1,9 +1,9 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/shared/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { hasRole } from '@/utils/roles'
-import { Database } from '@/types/supabase'
+import { hasRole } from '@/auth/utils/roles'
+import { Database } from '@/shared/types/supabase'
 
 export async function POST(
   req: NextRequest,

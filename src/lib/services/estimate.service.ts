@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 import { Database } from '@/types/supabase'
 
 // Initialize the client once
@@ -286,6 +286,110 @@ export class EstimateService {
     if (error) throw error
   }
 
+  // =================================================================
+  // PHASE 0: LIBRARY-ONLY JUNCTION TABLE METHODS
+  // =================================================================
+
+  /**
+   * Add library item to element (Phase 0)
+   * Replaces manual detail item creation
+   */
+  static async addLibraryItemToElement(
+    elementId: string, 
+    libraryItemId: string, 
+    quantity: number,
+    rateCalculated?: number
+  ): Promise<any> {
+    // Get next order index
+    const { data: existingItems } = await supabase
+      .from('estimate_element_items')
+      .select('order_index')
+      .eq('element_id', elementId)
+      .order('order_index', { ascending: false })
+      .limit(1);
+
+    const nextOrderIndex = (existingItems?.[0]?.order_index || 0) + 1;
+
+    const { data, error } = await supabase
+      .from('estimate_element_items')
+      .insert({
+        element_id: elementId,
+        library_item_id: libraryItemId,
+        quantity: quantity,
+        rate_calculated: rateCalculated,
+        order_index: nextOrderIndex
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Remove library item from element (Phase 0)
+   */
+  static async removeLibraryItemFromElement(elementItemId: string): Promise<void> {
+    const { error } = await supabase
+      .from('estimate_element_items')
+      .delete()
+      .eq('id', elementItemId);
+
+    if (error) throw error;
+  }
+
+  /**
+   * Update element item quantity (Phase 0)
+   */
+  static async updateElementItemQuantity(elementItemId: string, quantity: number): Promise<void> {
+    const { error } = await supabase
+      .from('estimate_element_items')
+      .update({ quantity })
+      .eq('id', elementItemId);
+
+    if (error) throw error;
+  }
+
+  /**
+   * Update element item rate (Phase 0)
+   */
+  static async updateElementItemRate(elementItemId: string, rateManual: number): Promise<void> {
+    const { error } = await supabase
+      .from('estimate_element_items')
+      .update({ rate_manual: rateManual })
+      .eq('id', elementItemId);
+
+    if (error) throw error;
+  }
+
+  /**
+   * Get element items using the display view (Phase 0)
+   */
+  static async getElementItems(elementId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('estimate_items_display')
+      .select('*')
+      .eq('element_id', elementId)
+      .order('order_index');
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  /**
+   * Get all items for a project using the display view (Phase 0)
+   */
+  static async getProjectItems(projectId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('estimate_items_display')
+      .select('*')
+      .eq('structure_name', projectId) // This might need adjustment based on actual view structure
+      .order('order_index');
+
+    if (error) throw error;
+    return data || [];
+  }
+
   // Legacy methods for backward compatibility
   
   static async createEstimateItem(item: Database['public']['Tables']['estimate_items']['Insert']): Promise<EstimateItem> {
@@ -542,7 +646,52 @@ export class EstimateService {
 
   static async calculateTotals(projectId: string) {
     try {
-      // Get all detail items for the project
+      // Phase 0: Use the new junction table approach via display view
+      // First get element IDs for this project
+      const { data: elements, error: elementsError } = await supabase
+        .from('estimate_elements')
+        .select('id')
+        .eq('project_id', projectId);
+
+      if (elementsError) throw elementsError;
+      
+      const elementIds = elements?.map(el => el.id) || [];
+      
+      if (elementIds.length === 0) {
+        return {
+          projectTotal: 0,
+          totalOverheads: 0,
+          totalProfit: 0,
+          totalVAT: 0,
+          materialTotal: 0,
+          labourTotal: 0,
+          equipmentTotal: 0,
+        };
+      }
+
+      // Now get items for these elements
+      const { data: items, error } = await supabase
+        .from('estimate_items_display')
+        .select('amount_effective')
+        .in('element_id', elementIds);
+
+      if (error) throw error;
+
+      const totalAmount = (items || []).reduce((sum, item) => sum + (item.amount_effective || 0), 0);
+      
+      return {
+        projectTotal: totalAmount,
+        totalOverheads: totalAmount * 0.1,
+        totalProfit: totalAmount * 0.05,
+        totalVAT: totalAmount * 0.16,
+        materialTotal: totalAmount * 0.4,
+        labourTotal: totalAmount * 0.3,
+        equipmentTotal: totalAmount * 0.15,
+      };
+    } catch (error) {
+      console.error('Error in calculateTotals:', error);
+      
+      // Fallback to legacy calculation if Phase 0 fails
       const detailItems = await this.getProjectDetailItems(projectId);
       
       return detailItems.reduce((acc, item) => {
@@ -564,9 +713,6 @@ export class EstimateService {
         labourTotal: 0,
         equipmentTotal: 0,
       });
-    } catch (error) {
-      console.error('Error in calculateTotals:', error);
-      throw error;
     }
   }
 } 

@@ -1,5 +1,5 @@
-import { Button } from "@/components/ui/button";
-import { cn } from "@/utils/cn";
+import { Button } from "@/shared/components/ui/button";
+import { cn } from "@/shared/utils/cn";
 import { ChevronLeftCircle } from "lucide-react";
 import Link from "next/link";
 import RegisterForm from "./_components/register-form";

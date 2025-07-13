@@ -1,9 +1,9 @@
 'use client'
 
-import { createClient } from '@/utils/supabase/client'
-import { EstimateTab } from '@/components/bq/EstimateTab'
+import { createClient } from '@/shared/lib/supabase/client'
+import { EstimateTab } from '@/features/estimates/components/EstimateTab'
 import { useEffect, useState } from 'react'
-import { Database } from '@/types/supabase'
+import { Database } from '@/shared/types/supabase'
 
 type Project = Database['public']['Tables']['projects']['Row']
 

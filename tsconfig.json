@@ -24,6 +24,33 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@/features/*": [
+        "./src/features/*"
+      ],
+      "@/shared/*": [
+        "./src/shared/*"
+      ],
+      "@/auth/*": [
+        "./src/features/auth/*"
+      ],
+      "@/admin/*": [
+        "./src/features/admin/*"
+      ],
+      "@/library/*": [
+        "./src/features/library/*"
+      ],
+      "@/projects/*": [
+        "./src/features/projects/*"
+      ],
+      "@/cost-control/*": [
+        "./src/features/cost-control/*"
+      ],
+      "@/estimates/*": [
+        "./src/features/estimates/*"
+      ],
+      "@/analytics/*": [
+        "./src/features/analytics/*"
       ]
     },
     "target": "ES2017"

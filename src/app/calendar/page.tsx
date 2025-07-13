@@ -1,5 +1,5 @@
-import DefaultLayout from '@/components/layouts/DefaultLayout'
-import { Button } from '@/components/ui/button'
+import DefaultLayout from '@/shared/components/layouts/DefaultLayout'
+import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 
 export default function CalendarPage() {

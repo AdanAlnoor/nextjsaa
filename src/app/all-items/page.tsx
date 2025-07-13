@@ -1,5 +1,5 @@
-import FilterLayout from '@/components/layouts/FilterLayout'
-import { Button } from '@/components/ui/button'
+import FilterLayout from '@/shared/components/layouts/FilterLayout'
+import { Button } from '@/shared/components/ui/button'
 import { 
   Table,
   TableBody,
@@ -7,8 +7,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
+} from '@/shared/components/ui/table'
+import { Badge } from '@/shared/components/ui/badge'
 import { MoreHorizontal } from 'lucide-react'
 
 const items = [

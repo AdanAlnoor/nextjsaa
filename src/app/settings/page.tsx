@@ -1,23 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 import { User } from '@supabase/supabase-js'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card"
+import { Button } from "@/shared/components/ui/button"
 import { Loader2, Users, UserPlus, Settings2, ShieldCheck, X, PlusCircle, Folder, LayoutGrid, List, MoreHorizontal, Calendar, DollarSign, UserIcon } from "lucide-react"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { toast } from '@/components/ui/use-toast'
-import { RoleGuard } from '@/components/auth/RoleGuard'
-import { ROLES, getUserRoles, assignRole, removeRole, isAccountOwner, type Role } from '@/utils/roles'
+import { Label } from "@/shared/components/ui/label"
+import { Input } from "@/shared/components/ui/input"
+import { Badge } from "@/shared/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select"
+import { toast } from '@/shared/components/ui/use-toast'
+import { RoleGuard } from '@/auth/components/auth/RoleGuard'
+import { ROLES, getUserRoles, assignRole, removeRole, isAccountOwner, type Role } from '@/auth/utils/roles'
 import Link from 'next/link'
-import { Switch } from "@/components/ui/switch"
-import { Separator } from "@/components/ui/separator"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Switch } from "@/shared/components/ui/switch"
+import { Separator } from "@/shared/components/ui/separator"
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/components/ui/avatar"
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null)

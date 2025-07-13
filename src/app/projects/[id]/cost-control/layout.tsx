@@ -1,11 +1,11 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/shared/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
-import ProjectLayout from '@/components/layouts/ProjectLayout'
-import { CostControlProvider } from '@/context/CostControlContext'
-import { CostControlSidebar } from '@/components/cost-control/CostControlSidebar'
+import ProjectLayout from '@/shared/components/layouts/ProjectLayout'
+import { CostControlProvider } from '@/features/cost-control/context/CostControlContext'
+import { CostControlSidebar } from '@/features/cost-control/components/cost-control/CostControlSidebar'
 import { getProjectById } from '@/lib/api'
-import { Database } from '@/types/supabase'
+import { Database } from '@/shared/types/supabase'
 
 type Project = Database['public']['Tables']['projects']['Row']
 

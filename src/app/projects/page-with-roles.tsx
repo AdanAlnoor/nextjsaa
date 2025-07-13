@@ -1,23 +1,24 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 import Link from 'next/link'
 import { User } from '@supabase/supabase-js'
 import { toast } from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/shared/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/shared/components/ui/card"
+import { Badge } from "@/shared/components/ui/badge"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/components/ui/avatar"
+import { UserNav } from "@/shared/components/navigation/UserNav"
 import { MoreHorizontal, PlusCircle, LogOut, Loader2, Users } from "lucide-react"
 import { format } from 'date-fns' // For date formatting
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // For error display
+import { Alert, AlertDescription, AlertTitle } from "@/shared/components/ui/alert"; // For error display
 import { Terminal } from "lucide-react"; // Icon for error alert
-import { RoleGuard } from '@/components/auth/RoleGuard' // Import the RoleGuard component
-import { hasPermission } from '@/utils/roles' // Import the role utility
-import { ROLES } from '@/utils/roles' // Import role constants
+import RoleGuard from '@/auth/components/auth/RoleGuard' // Import the RoleGuard component
+import { hasPermission } from '@/auth/utils/roles' // Import the role utility
+import { ROLES } from '@/auth/utils/roles' // Import role constants
 
 interface Project {
   id: string
@@ -130,7 +131,7 @@ export default function ProjectsPage() {
         </div>
         
         {/* Show Add Project button only to users with 'create_project' permission */}
-        <RoleGuard requiredRole={ROLES.ADMIN}>
+        <RoleGuard requiredPermission={ROLES.ADMIN}>
           <Button size="sm" className="h-8 gap-1">
             <PlusCircle className="h-3.5 w-3.5" />
             <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
@@ -139,35 +140,7 @@ export default function ProjectsPage() {
           </Button>
         </RoleGuard>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="overflow-hidden rounded-full">
-              <Avatar>
-                {/* Add user avatar logic if available */}
-                {/* <AvatarImage src={user.avatar_url || undefined} alt={user.email} /> */}
-                <AvatarFallback>{user.email?.[0]?.toUpperCase() || 'U'}</AvatarFallback>
-              </Avatar>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            
-            {/* Show the Admin menu item only to admins */}
-            <RoleGuard requiredRole={ROLES.ADMIN}>
-              <DropdownMenuItem asChild>
-                <Link href="/admin/users">User Management</Link>
-              </DropdownMenuItem>
-            </RoleGuard>
-            
-            <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuItem>Support</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-              <LogOut className="mr-2 h-4 w-4" /> Logout
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <UserNav />
       </header>
 
       {/* Main Content Area */}
@@ -193,7 +166,7 @@ export default function ProjectsPage() {
                  </p>
 
                  {/* Only show Add Project button to users with permission */}
-                 <RoleGuard requiredRole={ROLES.ADMIN}>
+                 <RoleGuard requiredPermission={ROLES.ADMIN}>
                    <Button size="sm" className="gap-1">
                       <PlusCircle className="h-3.5 w-3.5" /> Add Project
                    </Button>
@@ -216,19 +189,19 @@ export default function ProjectsPage() {
                          </DropdownMenuTrigger>
                          <DropdownMenuContent align="end">
                            {/* Only show Edit option to project managers */}
-                           <RoleGuard requiredRole={ROLES.PROJECT_MANAGER} projectId={project.id}>
+                           <RoleGuard requiredPermission={ROLES.PROJECT_MANAGER} projectId={project.id}>
                              <DropdownMenuItem>Edit</DropdownMenuItem>
                            </RoleGuard>
                            
                            {/* Only show Team option to project managers */}
-                           <RoleGuard requiredRole={ROLES.PROJECT_MANAGER} projectId={project.id}>
+                           <RoleGuard requiredPermission={ROLES.PROJECT_MANAGER} projectId={project.id}>
                              <DropdownMenuItem onClick={() => setShowInviteModal(true)}>
                                 <Users className="h-4 w-4 mr-2" /> Manage Team
                              </DropdownMenuItem>
                            </RoleGuard>
                            
                            {/* Only show Delete option to admins */}
-                           <RoleGuard requiredRole={ROLES.ADMIN}>
+                           <RoleGuard requiredPermission={ROLES.ADMIN}>
                              <DropdownMenuItem className="text-destructive focus:text-destructive">Delete</DropdownMenuItem>
                            </RoleGuard>
                          </DropdownMenuContent>

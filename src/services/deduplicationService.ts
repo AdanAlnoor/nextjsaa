@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 
 /**
  * Identifies and removes duplicate structures with the same name in a project

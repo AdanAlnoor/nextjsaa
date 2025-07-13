@@ -1,5 +1,5 @@
-import FilterLayout from '@/components/layouts/FilterLayout'
-import { Input } from '@/components/ui/input'
+import FilterLayout from '@/shared/components/layouts/FilterLayout'
+import { Input } from '@/shared/components/ui/input'
 import { Search as SearchIcon } from 'lucide-react'
 
 export default function SearchPage() {

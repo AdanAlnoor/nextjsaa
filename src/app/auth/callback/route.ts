@@ -4,10 +4,10 @@
  * This route handles the callback from Supabase Auth after email confirmation
  * and redirects users to the appropriate page.
  */
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/shared/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import type { Database } from '@/types/supabase'
+import type { Database } from '@/shared/types/supabase'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)

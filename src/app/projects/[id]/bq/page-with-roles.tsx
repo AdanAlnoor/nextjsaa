@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { createClient } from '@/shared/lib/supabase/client'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs"
+import { Button } from "@/shared/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card"
 import { Loader2, PlusCircle, Users } from "lucide-react"
-import { RoleGuard } from '@/components/auth/RoleGuard'
-import { ROLES } from '@/utils/roles'
-import { InviteUserModal } from '@/components/projects/InviteUserModal'
+import { RoleGuard } from '@/auth/components/auth/RoleGuard'
+import { ROLES } from '@/auth/utils/roles'
+import { InviteUserModal } from '@/projects/components/projects/InviteUserModal'
 
 interface Project {
   id: string
@@ -81,7 +81,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         <h1 className="text-2xl font-bold">{project.name}</h1>
         
         {/* Team management button only visible to Project Managers */}
-        <RoleGuard requiredRole={ROLES.PROJECT_MANAGER} projectId={projectId}>
+        <RoleGuard requiredPermission={ROLES.PROJECT_MANAGER} projectId={projectId}>
           <Button
             variant="outline"
             size="sm"
@@ -119,16 +119,16 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           <TabsTrigger value="cost-control">Cost Control</TabsTrigger>
           
           {/* Only show budget-sensitive tabs to Finance role */}
-          <RoleGuard requiredRole={ROLES.FINANCE} projectId={projectId}>
+          <RoleGuard requiredPermission={ROLES.FINANCE} projectId={projectId}>
             <TabsTrigger value="budget">Budget</TabsTrigger>
           </RoleGuard>
           
           {/* Only show purchasing to Purchaser role */}
           <RoleGuard 
-            requiredRole={ROLES.PURCHASER} 
+            requiredPermission={ROLES.PURCHASER} 
             projectId={projectId}
             fallback={
-              <RoleGuard requiredRole={ROLES.PROJECT_MANAGER} projectId={projectId}>
+              <RoleGuard requiredPermission={ROLES.PROJECT_MANAGER} projectId={projectId}>
                 <TabsTrigger value="purchasing">Purchasing</TabsTrigger>
               </RoleGuard>
             }
@@ -137,7 +137,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           </RoleGuard>
           
           {/* Team tab only visible to Project Managers */}
-          <RoleGuard requiredRole={ROLES.PROJECT_MANAGER} projectId={projectId}>
+          <RoleGuard requiredPermission={ROLES.PROJECT_MANAGER} projectId={projectId}>
             <TabsTrigger value="team">Team</TabsTrigger>
           </RoleGuard>
         </TabsList>
@@ -149,7 +149,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 <CardTitle>Bill of Quantities</CardTitle>
                 
                 {/* Only project managers can add items */}
-                <RoleGuard requiredRole={ROLES.PROJECT_MANAGER} projectId={projectId}>
+                <RoleGuard requiredPermission={ROLES.PROJECT_MANAGER} projectId={projectId}>
                   <Button size="sm">
                     <PlusCircle className="h-4 w-4 mr-2" />
                     Add Item
@@ -197,10 +197,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 
                 {/* Only purchasers and project managers can create purchase orders */}
                 <RoleGuard 
-                  requiredRole={ROLES.PURCHASER} 
+                  requiredPermission={ROLES.PURCHASER} 
                   projectId={projectId}
                   fallback={
-                    <RoleGuard requiredRole={ROLES.PROJECT_MANAGER} projectId={projectId}>
+                    <RoleGuard requiredPermission={ROLES.PROJECT_MANAGER} projectId={projectId}>
                       <Button size="sm">Create Purchase Order</Button>
                     </RoleGuard>
                   }
@@ -239,9 +239,8 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       {/* Render invitation modal when shown */}
       {showInviteModal && (
         <InviteUserModal
-          isOpen={showInviteModal}
-          onClose={() => setShowInviteModal(false)}
           projectId={projectId}
+          onInviteSent={() => setShowInviteModal(false)}
         />
       )}
     </div>

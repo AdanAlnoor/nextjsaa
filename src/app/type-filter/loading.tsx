@@ -1,5 +1,5 @@
-import { Skeleton } from '@/components/ui/skeleton'
-import FilterLayout from '@/components/layouts/FilterLayout'
+import { Skeleton } from '@/shared/components/ui/skeleton'
+import FilterLayout from '@/shared/components/layouts/FilterLayout'
 
 export default function TypeFilterLoading() {
   return (

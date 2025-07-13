@@ -1,9 +1,9 @@
-import { Button } from "@/components/ui/button";
-import { cn } from "@/utils/cn";
+import { Button } from "@/shared/components/ui/button";
+import { cn } from "@/shared/lib/utils";
 import { ChevronLeftCircle } from "lucide-react";
 import Link from "next/link";
 import LoginForm from "./_components/login-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 
 export const metadata = {
   title: 'Login',

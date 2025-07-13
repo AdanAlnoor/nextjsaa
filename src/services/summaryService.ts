@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 
 /**
  * Refreshes a project's summary data by calling the database function

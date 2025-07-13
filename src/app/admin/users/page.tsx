@@ -1,17 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { ROLES, assignRole, removeRole, getUserRoles } from '@/utils/roles'
-import RoleGuard from '@/components/auth/RoleGuard'
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { createClient } from '@/shared/lib/supabase/client'
+import { ROLES, assignRole, removeRole, getUserRoles } from '@/auth/utils/roles'
+import RoleGuard from '@/auth/components/auth/RoleGuard'
+import { Button } from "@/shared/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card"
+import { Input } from "@/shared/components/ui/input"
+import { Label } from "@/shared/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select"
 import { Loader2, UserPlus, Check, X } from "lucide-react"
-import { toast } from '@/components/ui/use-toast'
+import { toast } from '@/shared/components/ui/use-toast'
 
 interface User {
   id: string
@@ -65,7 +65,7 @@ export default function AdminUsersPage() {
     
     async function loadUserRoles() {
       try {
-        const roles = await getUserRoles(selectedUser.id)
+        const roles = await getUserRoles(selectedUser!.id)
         setUserRoles(roles)
       } catch (err) {
         console.error('Error loading user roles:', err)

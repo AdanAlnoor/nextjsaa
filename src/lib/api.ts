@@ -1,7 +1,7 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/shared/lib/supabase/server'
 import { cookies } from 'next/headers'
 // import { DashboardStats, Activity, Project } from '@/types/dashboard'
-import { Database } from '@/types/supabase'
+import { Database } from '@/shared/types/supabase'
 import { AppError, handleApiError } from './error-utils'
 
 // Function to get Supabase client in server components/actions

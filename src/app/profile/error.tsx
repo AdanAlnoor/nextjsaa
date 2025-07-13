@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import DefaultLayout from '@/components/layouts/DefaultLayout'
+import { Button } from '@/shared/components/ui/button'
+import DefaultLayout from '@/shared/components/layouts/DefaultLayout'
 
 export default function ProfileError({
   error,

@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { Database } from '@/types/supabase'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
+import { createClient } from '@/shared/lib/supabase/client'
+import { Database } from '@/shared/types/supabase'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Textarea } from '@/shared/components/ui/textarea'
+import { Label } from '@/shared/components/ui/label'
 import { 
   Card, 
   CardContent,
@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
   CardFooter
-} from '@/components/ui/card'
+} from '@/shared/components/ui/card'
 import {
   Table,
   TableBody,
@@ -22,7 +22,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
+} from '@/shared/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -31,8 +31,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { toast } from '@/components/ui/use-toast'
+} from "@/shared/components/ui/dialog"
+import { toast } from '@/shared/components/ui/use-toast'
 import { Loader2, Trash2, Edit, Plus } from 'lucide-react'
 
 interface Role {
@@ -94,7 +94,7 @@ export default function RoleManagementPage() {
     }
     
     fetchRoles()
-  }, [])
+  }, [supabase])
   
   // Create new role
   const createRole = async () => {
@@ -481,7 +481,7 @@ export default function RoleManagementPage() {
             <div>
               <dt className="font-medium">Custom Roles</dt>
               <dd className="ml-4 mt-1 text-sm">
-                You can create custom roles with specific descriptions to match your organization's needs.
+                You can create custom roles with specific descriptions to match your organization&apos;s needs.
                 These can be assigned to users just like system roles.
               </dd>
             </div>

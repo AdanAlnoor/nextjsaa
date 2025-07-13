@@ -3,8 +3,8 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardHeader, CardContent, CardFooter } from '@/shared/components/ui/card'
 
 export default function LoginPage() {
   const router = useRouter()

@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/shared/lib/supabase/client'
 
 /**
  * Fixes orphaned elements in the database by assigning them to an "Unassigned" structure

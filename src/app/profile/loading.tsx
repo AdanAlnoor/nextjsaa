@@ -1,6 +1,6 @@
-import DefaultLayout from '@/components/layouts/DefaultLayout'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardHeader, CardContent } from '@/components/ui/card'
+import DefaultLayout from '@/shared/components/layouts/DefaultLayout'
+import { Skeleton } from '@/shared/components/ui/skeleton'
+import { Card, CardHeader, CardContent } from '@/shared/components/ui/card'
 
 export default function ProfileLoading() {
   return (

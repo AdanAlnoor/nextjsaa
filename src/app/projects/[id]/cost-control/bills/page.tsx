@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { Database } from '@/types/supabase'
-import { BillsTab } from '@/components/cost-control/bills/BillsTab'
+import { createClient } from '@/shared/lib/supabase/client'
+import { Database } from '@/shared/types/supabase'
+import { BillsTab } from '@/cost-control/components/cost-control/bills/BillsTab'
 
 type Project = Database['public']['Tables']['projects']['Row']
 

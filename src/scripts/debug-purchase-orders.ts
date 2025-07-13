@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client';
+import { createClient } from '@/shared/lib/supabase/client';
 
 /**
  * This script checks the database connection and verifies purchase order tables

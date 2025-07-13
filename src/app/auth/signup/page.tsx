@@ -3,11 +3,11 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/client'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card'
+import { createClient } from '@/shared/lib/supabase/client'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import { Card, CardHeader, CardContent, CardFooter } from '@/shared/components/ui/card'
 import { toast } from 'react-hot-toast'
 
 export default function SignUpPage() {

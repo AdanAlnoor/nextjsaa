@@ -1,5 +1,5 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/shared/components/ui/badge";
+import { Button } from "@/shared/components/ui/button";
 import { Lock } from "lucide-react";
 import Link from "next/link";
 import BentoGridSection from "./_components/bento-grid-section";

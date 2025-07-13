@@ -2,9 +2,9 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { createClient } from '@/utils/supabase/client'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { createClient } from '@/shared/lib/supabase/client'
 
 export default function PurchaseWorksMock() {
   const router = useRouter()

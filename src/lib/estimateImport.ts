@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client';
+import { createClient } from '@/shared/lib/supabase/client';
 import type { Database } from '@/types/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { CostControlItem } from '@/types/supabase';

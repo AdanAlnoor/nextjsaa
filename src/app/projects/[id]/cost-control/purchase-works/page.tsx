@@ -1,16 +1,16 @@
 'use client'
 
-import { PurchaseOrdersTab } from '@/components/cost-control/purchase-orders/PurchaseOrdersTab'
-import { Database } from '@/types/supabase'
+import { PurchaseOrdersTab } from '@/cost-control/components/cost-control/purchase-orders/PurchaseOrdersTab'
+import { Database } from '@/shared/types/supabase'
 import { useEffect, useState } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import RoleGuard from '@/components/auth/RoleGuard'
-import { ROLES } from '@/utils/roles'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
+import { createClient } from '@/shared/lib/supabase/client'
+import RoleGuard from '@/auth/components/auth/RoleGuard'
+import { ROLES } from '@/auth/utils/roles'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/shared/components/ui/card'
 import { LockIcon, Loader2, DatabaseIcon, AlertTriangleIcon } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { hasPermission } from '@/utils/permissions'
+import { hasPermission } from '@/auth/utils/permissions'
 
 type Project = Database['public']['Tables']['projects']['Row']
 

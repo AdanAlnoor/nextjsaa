@@ -1,11 +1,11 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/shared/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
-import ProjectLayout from '@/components/layouts/ProjectLayout'
+import ProjectLayout from '@/shared/components/layouts/ProjectLayout'
 import { Suspense } from 'react'
 import { getProjectById } from '@/lib/api'
-import { Database } from '@/types/supabase'
-import { BQTabs } from '@/components/bq/BQTabs'
+import { Database } from '@/shared/types/supabase'
+import { EstimateTabs } from '@/features/estimates/components/schedule-tabs'
 
 type Project = Database['public']['Tables']['projects']['Row']
 
@@ -44,11 +44,11 @@ export default async function BQPage({ params, searchParams }: { params: { id: s
           <div className="p-4 flex items-center justify-center min-h-[60vh]">
             <div className="text-center">
               <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent mb-4"></div>
-              <p>Loading BQ data...</p>
+              <p>Loading estimate data...</p>
             </div>
           </div>
         }>
-          <BQTabs project={project} activeTab={activeTab} />
+          <EstimateTabs project={project} />
         </Suspense>
       </ProjectLayout>
     );

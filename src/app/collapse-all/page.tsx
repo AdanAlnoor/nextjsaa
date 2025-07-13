@@ -1,14 +1,14 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import DefaultLayout from '@/components/layouts/DefaultLayout'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import DefaultLayout from '@/shared/components/layouts/DefaultLayout'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
 import { Search, FolderOpen, FileText } from 'lucide-react'
-import { TreeView } from '@/components/tree-view'
+import { TreeView } from '@/shared/components/common/tree-view'
 
 // Import the TreeItem interface from the TreeView component
-import type { TreeItem } from '@/components/tree-view'
+import type { TreeItem } from '@/shared/components/common/tree-view'
 
 const items: TreeItem[] = [
   {

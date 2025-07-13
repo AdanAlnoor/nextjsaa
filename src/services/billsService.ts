@@ -1,6 +1,6 @@
-import { createClient } from '@/utils/supabase/client';
+import { createClient } from '@/shared/lib/supabase/client';
 import { Database } from '@/types/supabase';
-import { eventBus, EVENT_TYPES } from '@/utils/events';
+import { eventBus, EVENT_TYPES } from '@/shared/utils/events';
 
 /**
  * Transaction helpers for Supabase

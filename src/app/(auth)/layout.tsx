@@ -1,6 +1,6 @@
 'use client'
 
-import { ThemeToggle } from "@/components/theme-toggle"
+import { ThemeToggle } from "@/shared/components/common/theme-toggle"
 
 interface AuthLayoutProps {
   children: React.ReactNode;

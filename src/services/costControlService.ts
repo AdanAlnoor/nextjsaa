@@ -1,5 +1,5 @@
-import { createClient } from '@/utils/supabase/client'
-import { toast } from '@/components/ui/use-toast'
+import { createClient } from '@/shared/lib/supabase/client'
+import { toast } from '@/shared/components/ui/use-toast'
 
 /**
  * Synchronizes estimate data to cost control items for a specific project
