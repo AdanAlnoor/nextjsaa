@@ -15,18 +15,25 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/auth/components/auth-provider';
 import { useState, useEffect } from 'react';
-import { createClient } from '@/shared/lib/supabase/client';
-
 export function UserNav() {
   const { user, signOut, loading } = useAuth();
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState(false);
-  const supabase = createClient();
+  const [supabase, setSupabase] = useState<any>(null);
+
+  // Initialize Supabase client
+  useEffect(() => {
+    const initSupabase = async () => {
+      const { createClient } = await import('@/shared/lib/supabase/client');
+      setSupabase(createClient());
+    };
+    initSupabase();
+  }, []);
 
   // Check if user has admin role
   useEffect(() => {
     const checkAdminStatus = async () => {
-      if (!user?.id) {
+      if (!user?.id || !supabase) {
         setIsAdmin(false);
         return;
       }

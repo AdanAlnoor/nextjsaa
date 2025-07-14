@@ -1,2 +1,3 @@
 export * from './permissions'
-export * from './roles'
+export type { Role } from './roles'
+export { getUserRoles as getUserRolesForUser } from './roles'

@@ -78,7 +78,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/components/ui/tooltip"
-import { createClient } from '@/shared/lib/supabase/client'
 import { SkeletonTable } from "@/shared/components/ui/skeleton-table-row"
 import { 
   Project, 
@@ -112,6 +111,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     const init = async () => {
+      const { createClient } = await import('@/shared/lib/supabase/client')
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       
@@ -124,7 +124,7 @@ export default function ProjectsPage() {
       
       try {
         const projectsResponse = await getProjects()
-        setProjects(projectsResponse.data)
+        setProjects(projectsResponse)
       } catch (error) {
         console.error('Error loading projects:', error)
         toast.error('Failed to load projects')
@@ -173,7 +173,7 @@ export default function ProjectsPage() {
               </Badge>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{project.description}</div>
+              <div className="text-2xl font-bold">{project.name}</div>
               <p className="text-xs text-muted-foreground">
                 Created {format(parseISO(project.created_at), 'MMM dd, yyyy')}
               </p>

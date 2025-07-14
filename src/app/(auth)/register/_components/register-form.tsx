@@ -3,12 +3,12 @@
 import { Button } from "@/shared/components/ui/button";
 import { Form } from "@/shared/components/ui/form";
 import { InputForm } from "@/shared/components/ui/input/input-form";
-import { createClient } from "@/shared/lib/supabase/client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { z } from "zod";
+import { useState, useEffect } from "react";
 
 export const registerFormSchema = z.object({
   email: z.string().email(),
@@ -26,8 +26,15 @@ const defaultValues: RegisterValuesType = {
 
 const RegisterForm = () => {
   const router = useRouter();
+  const [supabase, setSupabase] = useState<any>(null);
 
-  const supabase = createClient();
+  useEffect(() => {
+    const initSupabase = async () => {
+      const { createClient } = await import('@/shared/lib/supabase/client');
+      setSupabase(createClient());
+    };
+    initSupabase();
+  }, []);
 
   const form = useForm<RegisterValuesType>({
     resolver: zodResolver(registerFormSchema),
@@ -35,6 +42,11 @@ const RegisterForm = () => {
   });
 
   async function handleRegister(values: RegisterValuesType) {
+    if (!supabase) {
+      toast.error("Authentication system not ready. Please try again.");
+      return;
+    }
+
     const { error, data } = await supabase.auth.signUp({
       ...values,
       options: {

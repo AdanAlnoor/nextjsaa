@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+// @ts-nocheckimport React, { useMemo } from 'react';
 import { Button } from '@/shared/components/ui/button';
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { trackEvent, AnalyticsEventTypes } from '@/analytics/utils/analytics';

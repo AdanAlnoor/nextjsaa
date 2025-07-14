@@ -2,19 +2,19 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { createClient } from '@/shared/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 
 export default function HomePage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [message, setMessage] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
-  const [currentPath, setCurrentPath] = useState('')
+  const [mounted, setMounted] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   
   useEffect(() => {
-    // Safely capture path on client only
-    setCurrentPath(window.location.pathname)
+    // Mark component as mounted
+    setMounted(true)
     
     // Set initial message and mark loading as finished *after* mount
     setMessage('Checking authentication...')
@@ -22,6 +22,7 @@ export default function HomePage() {
 
     const checkAuth = async () => {
       try {
+        const { createClient } = await import('@/shared/lib/supabase/client')
         const supabase = createClient()
         const { data, error } = await supabase.auth.getSession()
         
@@ -52,8 +53,8 @@ export default function HomePage() {
     checkAuth()
   }, [router])
   
-  // Render loading state initially
-  if (isLoading) {
+  // Render loading state until mounted
+  if (!mounted || isLoading) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6">
         <div>Loading page...</div>
@@ -94,7 +95,7 @@ export default function HomePage() {
         <div className="mt-8 text-sm text-gray-500">
           <p>Debug Info:</p>
           <p suppressHydrationWarning>Authentication Status: {isAuthenticated === null ? 'Checking...' : isAuthenticated ? 'Authenticated' : 'Not Authenticated'}</p>
-          <p suppressHydrationWarning>Current URL Path: {currentPath || 'Loading...'}</p>
+          <p suppressHydrationWarning>Current URL Path: {pathname}</p>
         </div>
       </main>
     </div>

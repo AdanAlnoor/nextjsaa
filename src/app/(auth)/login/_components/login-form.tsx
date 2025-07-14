@@ -3,9 +3,8 @@
 import { Button } from "@/shared/components/ui/button";
 import { Form } from "@/shared/components/ui/form";
 import { InputForm } from "@/shared/components/ui/input/input-form";
-import { createClient } from "@/shared/lib/supabase/client";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { z } from "zod";
@@ -30,11 +29,11 @@ const defaultValues: LoginValuesType = {
 
 const LoginForm = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   
-  // Get redirect URL from query params
-  const searchParams = new URLSearchParams(window.location.search);
+  // Get redirect URL from query params using Next.js hook
   const redirectTo = searchParams.get('redirectTo') || '/projects';
 
   const form = useForm<LoginValuesType>({
@@ -48,6 +47,7 @@ const LoginForm = () => {
     console.log('Starting login process with email:', values.email);
     
     try {
+      const { createClient } = await import("@/shared/lib/supabase/client");
       const supabase = createClient();
       
       // First check if there's already a session

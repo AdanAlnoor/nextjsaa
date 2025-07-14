@@ -29,6 +29,7 @@ export interface BillWithRelations {
     id: string
     po_number: string
   }
+  payments?: BillPayment[]
 }
 
 export interface ProjectBillSummary {
@@ -120,14 +121,15 @@ export interface BillCreateData {
 // Analytics types
 export interface AnalyticsFilter {
   dateRange?: {
-    start: string
-    end: string
+    start?: string
+    end?: string
   }
   projectIds?: string[]
   projects?: string[]
   costItems?: string[]
   categories?: string[]
   suppliers?: string[]
+  status?: string[]
 }
 
 export interface AnalyticsDashboardProps {
@@ -157,4 +159,31 @@ export interface ChartProps {
   showLegend?: boolean
   interactive?: boolean
   onDataPointClick?: (data: any) => void
+}
+
+export interface CostTrendAnalysis {
+  date: string
+  budget: number
+  actual: number
+  variance: number
+  category?: string
+  [key: string]: any
+}
+
+export interface BudgetForecast {
+  date: string
+  forecasted: number
+  confidence: number
+  scenario: 'optimistic' | 'realistic' | 'pessimistic'
+  [key: string]: any
+}
+
+export interface MetricCardProps {
+  title: string
+  value: string | number
+  change?: number
+  trend?: 'up' | 'down' | 'neutral'
+  icon?: React.ReactNode
+  loading?: boolean
+  className?: string
 }

@@ -9,10 +9,9 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/shared/lib/supabase/client'
 import type { AuthUser } from '@/types/auth'
 import type { Database } from '@/shared/types/supabase'
-import { Session, User, AuthError } from '@supabase/supabase-js'
+import { Session, User, AuthError, AuthChangeEvent } from '@supabase/supabase-js'
 
 // Define the shape of the context state
 interface AuthContextType {
@@ -35,18 +34,28 @@ interface AuthProviderProps {
 
 // AuthProvider component
 export function AuthProvider({ children }: AuthProviderProps) {
-  const supabase = createClient()
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
   const router = useRouter()
   
+  // Effect to mark component as mounted
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   // Effect to fetch initial session and set up listener
   useEffect(() => {
+    if (!mounted) return
+
     let isMounted = true
+    let supabase: any
 
     const fetchInitialSession = async () => {
       try {
+        const { createClient } = await import('@/shared/lib/supabase/client')
+        supabase = createClient()
         const { data, error } = await supabase.auth.getSession()
         if (error) throw error
         if (isMounted) {
@@ -65,32 +74,43 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     fetchInitialSession()
 
-    // Subscribe to auth state changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, currentSession) => {
-        if (isMounted) {
-          console.log("AuthProvider: Auth state changed", _event, !!currentSession)
-          setSession(currentSession)
-          setUser(currentSession?.user ?? null)
-          // No need to set loading=false here, initial fetch handles it.
-          
-          // Optional: Refresh page data if needed, but often not necessary with context
-          // router.refresh()
+    // Subscribe to auth state changes after client is created
+    const setupAuthListener = () => {
+      if (!supabase) return
+
+      const { data: authListener } = supabase.auth.onAuthStateChange(
+        (_event: AuthChangeEvent, currentSession: Session | null) => {
+          if (isMounted) {
+            console.log("AuthProvider: Auth state changed", _event, !!currentSession)
+            setSession(currentSession)
+            setUser(currentSession?.user ?? null)
+            // No need to set loading=false here, initial fetch handles it.
+            
+            // Optional: Refresh page data if needed, but often not necessary with context
+            // router.refresh()
+          }
         }
-      }
-    )
+      )
+
+      return authListener
+    }
+
+    const authListener = setupAuthListener()
 
     // Cleanup function
     return () => {
       isMounted = false
       authListener?.subscription.unsubscribe()
     }
-  }, [supabase])
+  }, [mounted])
 
   // --- Auth Action Methods --- 
 
   const signIn = async (email: string, password: string) => {
+    if (!mounted) return { error: new Error('Component not mounted') as any }
     setLoading(true) // Optional: show loading during sign in
+    const { createClient } = await import('@/shared/lib/supabase/client')
+    const supabase = createClient()
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
     if (error) console.error("Sign in error:", error)
@@ -99,13 +119,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   const signUp = async (email: string, password: string) => {
+    if (!mounted) return { error: new Error('Component not mounted') as any }
     setLoading(true)
+    const { createClient } = await import('@/shared/lib/supabase/client')
+    const supabase = createClient()
     const { data, error } = await supabase.auth.signUp({ 
         email, 
         password, 
         // Add options if needed, e.g., for email confirmation redirect
         options: {
-             emailRedirectTo: `${window.location.origin}/auth/callback`,
+             emailRedirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`,
         },
      })
     setLoading(false)
@@ -115,7 +138,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   const signOut = async () => {
+    if (!mounted) return
     setLoading(true)
+    const { createClient } = await import('@/shared/lib/supabase/client')
+    const supabase = createClient()
     const { error } = await supabase.auth.signOut()
     setLoading(false)
     if (error) console.error("Sign out error:", error)
@@ -126,9 +152,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
   
   const refreshSession = async () => {
+      if (!mounted) return
       setLoading(true)
       console.log("AuthProvider: Refreshing session...")
       try {
+          const { createClient } = await import('@/shared/lib/supabase/client')
+          const supabase = createClient()
           const { data, error } = await supabase.auth.refreshSession()
           if (error) throw error
           console.log("AuthProvider: Session refreshed.")
@@ -153,16 +182,34 @@ export function AuthProvider({ children }: AuthProviderProps) {
     refreshSession,
   }
 
+  // Don't create Supabase client or access browser APIs until mounted
+  if (!mounted) {
+    return (
+      <AuthContext.Provider value={{
+        session: null,
+        user: null,
+        loading: true,
+        isAuthenticated: false,
+        signIn: async () => ({ error: null }),
+        signUp: async () => ({ error: null }),
+        signOut: async () => {},
+        refreshSession: async () => {}
+      }}>
+        {children}
+      </AuthContext.Provider>
+    );
+  }
+
   // Provide the context value to children
   return (
     <AuthContext.Provider value={value}>
-      {/* Render children only when not loading, or show a loader */}
-      {/* {!loading ? children : <div>Loading Authentication...</div>} */}
-      {/* Simplest approach: let consuming components handle loading state */}
       {children}
     </AuthContext.Provider>
   )
 }
+
+// Export as default
+export default AuthProvider
 
 // Custom hook to use the AuthContext
 export function useAuth() {

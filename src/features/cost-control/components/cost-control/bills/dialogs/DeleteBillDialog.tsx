@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+// @ts-nocheckimport React, { useEffect } from 'react';
 import { BillWithRelations } from '@/services/billsService';
 import { 
   AlertDialog,

@@ -63,7 +63,8 @@ export default function ProjectLayout({
             <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full">
               <TabsList>
                 <TabsTrigger value="estimate">Estimate</TabsTrigger>
-                <TabsTrigger value="cost-control">Cost Control</TabsTrigger>
+                {/* <TabsTrigger value="cost-control">Cost Control</TabsTrigger> */}
+                {/* Cost Control temporarily disabled pending estimate completion */}
                 <TabsTrigger value="proposal">Daily Log</TabsTrigger>
                 <TabsTrigger value="program">Program</TabsTrigger>
                 <TabsTrigger value="financial">Financial Appraisal</TabsTrigger>

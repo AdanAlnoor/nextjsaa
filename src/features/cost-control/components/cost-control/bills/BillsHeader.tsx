@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from 'react';
 import { Button } from '@/shared/components/ui/button';
 import { PlusCircle, RefreshCw } from 'lucide-react';

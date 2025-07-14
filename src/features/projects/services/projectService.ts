@@ -1,4 +1,3 @@
-import { createClient } from "@/shared/lib/supabase/client"
 import { Database } from "@/shared/types/supabase"
 
 // Type definitions from database schema
@@ -7,11 +6,15 @@ export type ProjectInsert = Database['public']['Tables']['projects']['Insert']
 export type ProjectUpdate = Database['public']['Tables']['projects']['Update']
 
 class ProjectService {
-  private supabase = createClient()
+  private async getSupabaseClient() {
+    const { createClient } = await import("@/shared/lib/supabase/client")
+    return createClient()
+  }
 
   async getProjects(): Promise<Project[]> {
     try {
-      const { data, error } = await this.supabase
+      const supabase = await this.getSupabaseClient()
+      const { data, error } = await supabase
         .from('projects')
         .select('*')
         .order('updated_at', { ascending: false })
@@ -30,7 +33,8 @@ class ProjectService {
 
   async getProjectById(id: string): Promise<Project | null> {
     try {
-      const { data, error } = await this.supabase
+      const supabase = await this.getSupabaseClient()
+      const { data, error } = await supabase
         .from('projects')
         .select('*')
         .eq('id', id)
@@ -54,7 +58,8 @@ class ProjectService {
 
   async createProject(project: ProjectInsert): Promise<Project> {
     try {
-      const { data, error } = await this.supabase
+      const supabase = await this.getSupabaseClient()
+      const { data, error } = await supabase
         .from('projects')
         .insert(project)
         .select()
@@ -74,7 +79,8 @@ class ProjectService {
 
   async updateProject(id: string, updates: ProjectUpdate): Promise<Project> {
     try {
-      const { data, error } = await this.supabase
+      const supabase = await this.getSupabaseClient()
+      const { data, error } = await supabase
         .from('projects')
         .update({
           ...updates,
@@ -98,7 +104,8 @@ class ProjectService {
 
   async deleteProject(id: string): Promise<void> {
     try {
-      const { error } = await this.supabase
+      const supabase = await this.getSupabaseClient()
+      const { error } = await supabase
         .from('projects')
         .delete()
         .eq('id', id)
@@ -116,3 +123,19 @@ class ProjectService {
 
 // Export singleton instance
 export const projectService = new ProjectService()
+
+// Export convenience functions for backward compatibility
+export const getProjects = () => projectService.getProjects()
+export const createProject = (project: ProjectInsert) => projectService.createProject(project)
+export const deleteProject = (id: string) => projectService.deleteProject(id)
+
+// Mock implementation for subscribeToProjects (update this with real implementation if needed)
+export const subscribeToProjects = (_callback: (projects: Project[]) => void) => {
+  // This is a placeholder - implement real-time subscription if needed
+  return () => {} // Return unsubscribe function
+}
+
+// Mock type for backward compatibility
+export interface FetchProjectsOptions {
+  // Add properties as needed
+}

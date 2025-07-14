@@ -26,6 +26,11 @@ function parseCookie(cookieString: string, name: string): string | null {
 let supabaseInstance: SupabaseClient<Database> | null = null;
 
 export function createClient() {
+  // Critical: Only create client in browser environment
+  if (typeof window === 'undefined') {
+    throw new Error('createClient should only be called on the client side');
+  }
+  
   // Return existing instance if already created
   if (supabaseInstance) {
     return supabaseInstance;
@@ -59,36 +64,8 @@ export function createClient() {
       }
     });
     
-    // Add a listener to monitor auth state changes
-    supabaseInstance.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event, "Session exists:", !!session);
-      
-      // Force refresh the instance if the session changed
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        // We keep the same instance but log the successful auth event
-        console.log("Authentication refreshed successfully");
-      }
-    });
-    
-    // Test connection only on first creation
-    setTimeout(async () => {
-      try {
-        const { data } = await supabaseInstance!.auth.getSession();
-        console.log("Client session check:", data.session ? 'Active' : 'None');
-        
-        if (data.session) {
-          // If we have a session, verify it works
-          try {
-            const user = await supabaseInstance!.auth.getUser();
-            console.log("Authenticated as user:", user.data.user?.email);
-          } catch (userError) {
-            console.error("Session exists but getUser failed:", userError);
-          }
-        }
-      } catch (err) {
-        console.error("Error checking session:", err);
-      }
-    }, 1000);
+    // Move auth state listener setup to AuthProvider instead of module scope
+    // This prevents SSR issues and allows proper component lifecycle management
     
     return supabaseInstance;
     

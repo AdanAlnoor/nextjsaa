@@ -1,5 +1,4 @@
 import { ReactNode, useEffect, useState } from 'react'
-import { createClient } from '@/shared/lib/supabase/client'
 import { hasPermission } from '@/auth/utils/permissions'
 import { Loader2 } from 'lucide-react'
 import type { Role } from '@/auth/utils/roles'
@@ -31,16 +30,27 @@ export default function RoleGuard({
 }: RoleGuardProps) {
   const [hasAccess, setHasAccess] = useState<boolean | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [supabase, setSupabase] = useState<any>(null)
   const router = useRouter()
-  const supabase = createClient()
   
   // Generate a cache key for this permission check
   const cacheKey = `${requiredPermission}:${projectId || 'global'}`;
+  
+  // Initialize Supabase client
+  useEffect(() => {
+    const initSupabase = async () => {
+      const { createClient } = await import('@/shared/lib/supabase/client');
+      setSupabase(createClient());
+    };
+    initSupabase();
+  }, []);
   
   useEffect(() => {
     let isMounted = true
     
     const checkAccess = async () => {
+      if (!supabase) return;
+      
       try {
         // First check cache
         const cachedPermission = permissionCache.get(cacheKey);
